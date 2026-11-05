@@ -334,6 +334,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return node.Identifier.Name;
     }
 
+    /// <inheritdoc/>
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
@@ -348,7 +349,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var argLines = node.Arguments.Select(a => indent + Visit(a));
-            return $"{prefix}{target}{generic}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
+            return $"{prefix}{target}{generic}({Environment.NewLine}{string.Join("," + Environment.NewLine, argLines)}{Environment.NewLine}{closingIndent})";
         }
         var args = string.Join(", ", node.Arguments.Select(Visit));
         return $"{prefix}{target}{generic}({args})";
@@ -361,6 +362,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"{target}{op}{node.Member.Name}";
     }
 
+    /// <inheritdoc/>
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
         if (node.Properties.Count == 0)
@@ -372,7 +374,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var propertyLines = node.Properties.Select(p => indent + VisitPropertyAssignment(p));
-            result = "{\n" + string.Join(",\n", propertyLines) + "\n" + closingIndent + "}";
+            result = "{" + Environment.NewLine + string.Join("," + Environment.NewLine, propertyLines) + Environment.NewLine + closingIndent + "}";
         }
         else
         {
@@ -382,6 +384,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return node.AsConstAssertion ? $"{result} as const" : result;
     }
     
+    /// <inheritdoc/>
     public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node)
     {
         if (node.PreferMultilineFormat && node.Elements.Count > 1)
@@ -389,7 +392,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var elementLines = node.Elements.Select(e => indent + Visit(e));
-            return "[\n" + string.Join(",\n", elementLines) + "\n" + closingIndent + "]";
+            return "[" + Environment.NewLine + string.Join("," + Environment.NewLine, elementLines) + Environment.NewLine + closingIndent + "]";
         }
         var elements = string.Join(", ", node.Elements.Select(Visit));
         return $"[{elements}]";
@@ -871,7 +874,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var useMultilineParams = node.Parameters.Count >= 2;
         var paramsIndent = new string(' ', (indentLevel + 1) * 4);
         var parametersStr = useMultilineParams
-            ? "\n" + string.Join(",\n", node.Parameters.Select(p => paramsIndent + RenderParameterDeclaration(p))) + "\n" + new string(' ', indentLevel * 4)
+            ? Environment.NewLine + string.Join("," + Environment.NewLine, node.Parameters.Select(p => paramsIndent + RenderParameterDeclaration(p))) + Environment.NewLine + new string(' ', indentLevel * 4)
             : string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
 
         // Проверяем, является ли это type predicate (value is Type)

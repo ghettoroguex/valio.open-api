@@ -24,6 +24,32 @@ public sealed class IdentityZodUuidContractTests
         { Transports = ["axios"], ValidationLibrary = validation, UuidFormat = "regex" });
     }
 
+    /// <summary>Checks platform line endings in generated Zod schemas and multiline TypeScript clients.</summary>
+    /// <param name="version">The selected Zod version.</param>
+    /// <returns>A task that completes after generated files have consistent line endings.</returns>
+    [TestCase("zod3")]
+    [TestCase("zod4")]
+    public async Task GeneratedSchemasAndClientsUseConsistentLineEndings(string version)
+    {
+        var context = await Generate("zod-contract.json", version);
+        var schema = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal));
+        var client = context.GeneratedFiles.First(f => f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
+        schema.Content.Should().Contain("z.record(z.string(), z.array(z.string()))");
+        client.Content.Should().Contain("signal?: AbortSignal");
+        foreach (var file in new[] { schema, client })
+        {
+            var remainder = file.Content.Replace(Environment.NewLine, "", StringComparison.Ordinal);
+            remainder.Should().NotContain("\n", file.RelativePath).And.NotContain("\r", file.RelativePath);
+        }
+        foreach (var file in context.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".ts", StringComparison.Ordinal)))
+        {
+            var withoutCrLf = file.Content.Replace("\r\n", "", StringComparison.Ordinal);
+            withoutCrLf.Should().NotContain("\r", file.RelativePath);
+            if (file.Content.Contains("\r\n", StringComparison.Ordinal))
+                withoutCrLf.Should().NotContain("\n", file.RelativePath);
+        }
+    }
+
     /// <summary>Checks all required/nullable combinations and typed recursive records in both Zod versions.</summary>
     /// <param name="version">The selected Zod version.</param>
     /// <returns>A task that completes after model presence, nullability and record schemas are checked.</returns>

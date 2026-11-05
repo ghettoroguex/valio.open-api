@@ -105,7 +105,7 @@ public sealed class TypeScriptIndexStep : ICodeGenerationStep
             // No clash → keep a clean star re-export and claim every exported name.
             foreach (var export in module.Exports)
                 claimed.Add(export.Name);
-            return $"export * from \"{module.ImportPath}\";\n";
+            return $"export * from \"{module.ImportPath}\";{Environment.NewLine}";
         }
 
         // Re-export only the names not already owned by an earlier module, split value vs type-only
@@ -116,9 +116,9 @@ public sealed class TypeScriptIndexStep : ICodeGenerationStep
 
         var sb = new StringBuilder();
         if (values.Count > 0)
-            sb.Append($"export {{ {string.Join(", ", values)} }} from \"{module.ImportPath}\";\n");
+            sb.AppendLine($"export {{ {string.Join(", ", values)} }} from \"{module.ImportPath}\";");
         if (types.Count > 0)
-            sb.Append($"export type {{ {string.Join(", ", types)} }} from \"{module.ImportPath}\";\n");
+            sb.AppendLine($"export type {{ {string.Join(", ", types)} }} from \"{module.ImportPath}\";");
 
         foreach (var export in fresh)
             claimed.Add(export.Name);
