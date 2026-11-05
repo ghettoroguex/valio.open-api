@@ -101,6 +101,68 @@ public sealed class ClientExecutionContractTests
         finally { Directory.Delete(temporary, recursive: true); }
     }
 
+    /// <summary>Preserves the original OpenAPI query name across generated transport clients.</summary>
+    /// <param name="transport">The selected TypeScript transport.</param>
+    /// <returns>A task that completes after the transport output is checked.</returns>
+    [TestCase("axios")]
+    [TestCase("fetch")]
+    [TestCase("nextjs")]
+    [TestCase("solid")]
+    [TestCase("ky")]
+    [TestCase("got")]
+    [TestCase("ofetch")]
+    [TestCase("undici")]
+    [TestCase("angular-rxjs")]
+    public async Task TransportClientsPreserveOriginalQueryNames(string transport)
+    {
+        const string json = """
+        {"openapi":"3.0.3","info":{"title":"wire","version":"1"},"paths":{"/items":{"get":{
+          "operationId":"listItems","parameters":[{"name":"Paging.Page","in":"query","required":false,"schema":{"type":"integer"}}],
+          "responses":{"204":{"description":"empty"}}}}}}
+        """;
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(json);
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport] });
+        var suffix = transport.StartsWith("angular-", StringComparison.Ordinal) ? ".service.ts" : $".{transport}.ts";
+        var client = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(suffix, StringComparison.Ordinal));
+        client.Content.Should().Contain("\"Paging.Page\"");
+        client.Content.Should().MatchRegex(@"\?*\.Paging_Page\b");
+    }
+
+    /// <summary>Executes generated Axios and fetch clients with sanitized property names and dotted wire names.</summary>
+    /// <returns>A task that completes after both clients preserve the OpenAPI query names.</returns>
+    [Test]
+    public async Task QueryParametersUseOriginalWireNamesAtRuntime()
+    {
+        var modules = GetModules();
+        var temporary = CreateDirectory(modules);
+        try
+        {
+            var parameter = new IrParameter { Name = "Paging_Page", OriginalName = "Paging.Page", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }, IsRequired = false };
+            var other = new IrParameter { Name = "Status", OriginalName = "Status", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String }, IsRequired = false };
+            var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with { QueryParameters = [parameter, other] };
+            var builder = new TypeScriptAstBuilder(new NamingConverter());
+            var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
+            await File.WriteAllTextAsync(Path.Combine(temporary, "axios.ts"), renderer.Render(builder.BuildSourceFileForOperation(operation, transport: "axios")));
+            await File.WriteAllTextAsync(Path.Combine(temporary, "fetch.ts"), renderer.Render(builder.BuildSourceFileForOperation(operation, transport: "fetch")));
+            const string script = """
+            const ts=require('typescript'),fs=require('fs'),vm=require('vm'),assert=require('assert');
+            let config, url;
+            const client={request:async value=>{config=value;return {status:204,data:undefined}}};
+            const load=file=>{const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+              const exports={};vm.runInNewContext(js,{exports,require:()=>({default:client}),URLSearchParams,fetch:async value=>{url=value;return {status:204}}});return Object.values(exports).find(v=>typeof v==='function');};
+            (async()=>{await load('axios.ts')({Paging_Page:3,Status:'active'},undefined,undefined,client);
+              assert.equal(config.params['Paging.Page'],3);assert.equal(config.params.Status,'active');assert.equal(Object.hasOwn(config.params,'Paging_Page'),false);
+              await load('fetch.ts')({Paging_Page:3,Status:'active'});const parsed=new URL(url,'http://example.test');
+              assert.equal(parsed.searchParams.get('Paging.Page'),'3');assert.equal(parsed.searchParams.get('Status'),'active');assert.equal(parsed.searchParams.has('Paging_Page'),false);
+              await load('fetch.ts')({Status:'active'});assert.equal(new URL(url,'http://example.test').searchParams.has('Paging.Page'),false);
+            })().catch(e=>{console.error(e);process.exit(1)});
+            """;
+            await RunNode(temporary, modules, ["--eval", script]);
+        }
+        finally { Directory.Delete(temporary, recursive: true); }
+    }
+
     /// <summary>Creates an operation with specified responses.</summary>
     /// <param name="responses">The documented responses.</param>
     /// <returns>The operation.</returns>

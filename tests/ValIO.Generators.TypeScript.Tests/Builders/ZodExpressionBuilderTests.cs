@@ -39,11 +39,12 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.boolean()");
     }
 
+    /// <summary>Checks that number schemas do not coerce input.</summary>
     [Test]
-    public void Number_NoConstraints_CoerceNumber()
+    public void Number_NoConstraints_StrictNumber()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false);
-        Render(schema).Should().Be("z.coerce.number()");
+        Render(schema).Should().Be("z.number()");
     }
 
     [Test]
@@ -53,25 +54,28 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.null()");
     }
 
+    /// <summary>Checks integer validation without input coercion.</summary>
     [Test]
     public void Integer_AddsIntRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Integer, useBigInt: false);
-        Render(schema).Should().Contain("z.coerce.number()").And.Contain(".int()");
+        Render(schema).Should().Contain("z.number()").And.Contain(".int()");
     }
 
+    /// <summary>Checks that long values use a strict number when bigint is disabled.</summary>
     [Test]
     public void Long_WithoutBigInt_FallsBackToNumber()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Long, useBigInt: false);
-        Render(schema).Should().Be("z.coerce.number()");
+        Render(schema).Should().Be("z.number().int()");
     }
 
+    /// <summary>Checks that bigint values are not coerced.</summary>
     [Test]
-    public void Long_WithBigInt_UsesCoerceBigint()
+    public void Long_WithBigInt_UsesStrictBigint()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Long, useBigInt: true);
-        Render(schema).Should().Be("z.coerce.bigint()");
+        Render(schema).Should().Be("z.bigint()");
     }
 
     [Test]

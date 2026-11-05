@@ -17,14 +17,14 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 /// </summary>
 public static class ZodExpressionBuilder
 {
-    /// <summary>
-    /// Строит выражение для Zod примитива с опциональными уточнениями (uuid, datetime, min, max и т.д.)
-    /// </summary>
-    /// <param name="primitiveKind">Примитивный IR тип</param>
-    /// <param name="useBigInt">Использовать bigint для Long</param>
-    /// <param name="constraints">Ограничения свойства (min, max, minLength, maxLength, pattern)</param>
-    /// <param name="constraintsRef">Ссылка на объект констант вида "ModelNameConstraints.propertyName" для подстановки значений</param>
-    /// <returns>ZodExpressionSchemaNode с полной цепочкой вызовов</returns>
+    /// <summary>Builds a strict model primitive schema with its format and constraints.</summary>
+    /// <param name="primitiveKind">The primitive IR type.</param>
+    /// <param name="useBigInt">Whether long values use the bigint type.</param>
+    /// <param name="constraints">The optional property constraints.</param>
+    /// <param name="constraintsRef">The optional reference to generated constraint constants.</param>
+    /// <param name="uuidFormat">The configured UUID validation mode.</param>
+    /// <param name="description">The optional property description.</param>
+    /// <returns>The schema expression with applicable refinements.</returns>
     public static ZodExpressionSchemaNode BuildPrimitiveExpression(
         IrPrimitiveKind primitiveKind,
         bool useBigInt,
@@ -37,8 +37,7 @@ public static class ZodExpressionBuilder
         expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
         // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
-        // Многострочные описания иначе выводят сырой перевод строки прямо в строковый литерал и рвут его
-        // (unterminated string literal) — схлопываем любые пробелы/переводы строк в один пробел.
+        // Collapse whitespace to keep multiline descriptions inside a valid string literal.
         if (!string.IsNullOrWhiteSpace(description))
         {
             var singleLineDescription = System.Text.RegularExpressions.Regex.Replace(description!, @"\s+", " ").Trim();
@@ -48,9 +47,10 @@ public static class ZodExpressionBuilder
         return new ZodExpressionSchemaNode(expr);
     }
 
-    /// <summary>
-    /// Базовое выражение: z.string(), z.coerce.number() и т.д.
-    /// </summary>
+    /// <summary>Builds a non-coercing primitive schema for model values.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="useBigInt">Whether long values use the bigint type.</param>
+    /// <returns>The base Zod expression before refinements.</returns>
     private static ExpressionNode BuildBasePrimitive(IrPrimitiveKind kind, bool useBigInt)
     {
         ExpressionNode baseCall;
@@ -65,24 +65,25 @@ public static class ZodExpressionBuilder
                 break;
             case IrPrimitiveKind.Number:
                 baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
+                    MemberAccess(Identifier("z"), "number"),
                     Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Integer:
                 baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
+                    MemberAccess(Identifier("z"), "number"),
                     Array.Empty<ExpressionNode>());
                 baseCall = Chain(baseCall, "int", Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Long when useBigInt:
                 baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "bigint"),
+                    MemberAccess(Identifier("z"), "bigint"),
                     Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Long:
                 baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
+                    MemberAccess(Identifier("z"), "number"),
                     Array.Empty<ExpressionNode>());
+                baseCall = Chain(baseCall, "int", Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Boolean:
                 baseCall = Call(MemberAccess(Identifier("z"), "boolean"), Array.Empty<ExpressionNode>());

@@ -65,7 +65,7 @@ public sealed class IdentityZodUuidContractTests
         schema.Should().Contain("requiredNullable: z.string().nullable()");
         schema.Should().Contain("optionalValue: z.string().optional()");
         schema.Should().Contain("optionalNullable: z.string().nullish()");
-        schema.Should().Contain("optionalNullableArray: z.array(z.coerce.number().int()).nullish()");
+        schema.Should().Contain("optionalNullableArray: z.array(z.number().int()).nullish()");
         schema.Should().Contain("requiredNullableDictionary: z.record(z.string(), z.string()).nullable()");
         schema.Should().Contain("nullableValues: z.record(z.string(), z.string().nullable()).optional()");
         schema.Should().Contain("errors: z.record(z.string(), z.array(z.string())).optional()");

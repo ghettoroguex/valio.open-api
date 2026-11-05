@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Strict numeric models", "version": "1" },
+  "paths": {},
+  "components": { "schemas": { "NumericModel": {
+    "type": "object", "required": ["count", "price", "nullableCount", "longValue"],
+    "properties": {
+      "count": { "type": "integer", "minimum": 0 },
+      "price": { "type": "number", "minimum": 0.5 },
+      "nullableCount": { "type": "integer", "nullable": true },
+      "longValue": { "type": "integer", "format": "int64" }
+    }
+  } } }
+}

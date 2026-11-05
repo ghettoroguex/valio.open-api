@@ -89,9 +89,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return $"{node.Name.Name}: {value}";
     }
     
-    /// <summary>
-    /// Рендерит примитивную Zod схему (z.string(), z.number(), и т.д.)
-    /// </summary>
+    /// <inheritdoc />
     public override string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
     {
         if (!string.IsNullOrEmpty(node.SchemaReference))
@@ -104,9 +102,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return node.SchemaKind switch
         {
             ZodSchemaKind.String => "z.string()",
-            ZodSchemaKind.Number => "z.coerce.number()",
-            ZodSchemaKind.Integer => "z.coerce.number().int()",
-            ZodSchemaKind.BigInt => "z.coerce.bigint()",
+            ZodSchemaKind.Number => "z.number()",
+            ZodSchemaKind.Integer => "z.number().int()",
+            ZodSchemaKind.BigInt => "z.bigint()",
             ZodSchemaKind.Boolean => "z.boolean()",
             ZodSchemaKind.Null => "z.null()",
             ZodSchemaKind.Any => "z.any()",
@@ -263,14 +261,17 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     
     // Вспомогательные методы для рендеринга примитивных типов
     
+    /// <summary>Renders a strict primitive schema by kind.</summary>
+    /// <param name="kind">The primitive schema kind.</param>
+    /// <returns>The corresponding Zod expression.</returns>
     private string RenderZodPrimitive(ZodSchemaKind kind)
     {
         return kind switch
         {
             ZodSchemaKind.String => "z.string()",
-            ZodSchemaKind.Number => "z.coerce.number()",
-            ZodSchemaKind.Integer => "z.coerce.number().int()",
-            ZodSchemaKind.BigInt => "z.coerce.bigint()",
+            ZodSchemaKind.Number => "z.number()",
+            ZodSchemaKind.Integer => "z.number().int()",
+            ZodSchemaKind.BigInt => "z.bigint()",
             ZodSchemaKind.Boolean => "z.boolean()",
             ZodSchemaKind.Null => "z.null()",
             ZodSchemaKind.Any => "z.any()",

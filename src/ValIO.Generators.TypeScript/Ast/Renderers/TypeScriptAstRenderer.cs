@@ -1263,12 +1263,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return type.Accept(this);
     }
 
+    /// <summary>Renders a literal using TypeScript's culture-independent numeric syntax.</summary>
+    /// <param name="node">The literal to render.</param>
+    /// <returns>The TypeScript literal expression.</returns>
     private string RenderLiteral(LiteralExpressionNode node)
     {
         return node.LiteralKind switch
         {
             LiteralKind.String => $"\"{CodeEscapeHelper.EscapeTypeScriptString(node.Value?.ToString() ?? "")}\"",
-            LiteralKind.Number => node.Value?.ToString() ?? "0",
+            LiteralKind.Number => Convert.ToString(node.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "0",
             LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
             LiteralKind.Null => "null",
             LiteralKind.Character => $"'{node.Value}'",

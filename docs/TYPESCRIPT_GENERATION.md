@@ -44,8 +44,11 @@ TypeScript properties preserve independent OpenAPI presence and nullability:
 | no | yes | `value?: T \| null` | `schema.nullish()` |
 
 Zod 3 and Zod 4 both emit string-keyed dictionaries as `z.record(z.string(), valueSchema)`.
+Numeric model schemas validate the original value strictly: strings and null are not coerced to numbers, integer schemas reject fractional values, and OpenAPI bounds use culture-independent decimal syntax. Route and query parameter schemas retain their explicit coercion behavior.
 `uuidFormat: regex` validates a complete UUID, accepts uppercase and the all-zero UUID, and rejects
 prefixes, suffixes, and embedded newlines. Shared format imports are emitted for schemas that use them.
+
+Query parameter identifiers may be sanitized for TypeScript, but every implemented transport sends the original OpenAPI wire name: `Paging_Page` becomes `Paging.Page`. Optional `false` and `0` remain present.
 
 Axios clients accept `client?: AxiosInstance` after `signal`. If omitted, they use the configured
 `axios.customInstancePath` and `axios.customInstanceName` instance, preserving its interceptors.

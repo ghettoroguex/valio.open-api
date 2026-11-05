@@ -367,6 +367,10 @@ public sealed class UndiciClientAstBuilder
         return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
     }
 
+    /// <summary>Builds query parameters using their original wire names.</summary>
+    /// <param name="operation">The source operation.</param>
+    /// <param name="sources">The generated parameter sources.</param>
+    /// <returns>The generated query object.</returns>
     private ExpressionNode BuildQueryObject(IrOperation operation, TypeScriptParameterSources sources)
     {
         var properties = new List<PropertyAssignmentNode>();
@@ -376,13 +380,13 @@ public sealed class UndiciClientAstBuilder
             var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
             if (parameter.IsRequired)
             {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.Name), access));
+                properties.Add(new PropertyAssignmentNode(new IdentifierNode(TypeScriptQueryString.WirePropertyName(parameter)), access));
             }
             else
             {
                 properties.Add(SpreadProperty(new ConditionalExpressionNode(
                     new BinaryExpressionNode(access, BinaryOperator.NotEqual, Id("undefined")),
-                    Object((parameter.Name, access)),
+                    Object((TypeScriptQueryString.WirePropertyName(parameter), access)),
                     EmptyObject())));
             }
         }

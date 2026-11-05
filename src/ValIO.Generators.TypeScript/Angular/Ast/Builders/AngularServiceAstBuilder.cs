@@ -255,6 +255,10 @@ public sealed class AngularServiceAstBuilder
             genericTypeArgument: genericTypeArg);
     }
 
+    /// <summary>Builds the query chain using original wire names.</summary>
+    /// <param name="operation">The source operation.</param>
+    /// <param name="sources">The generated parameter sources.</param>
+    /// <returns>The generated HttpParams expression.</returns>
     private ExpressionNode BuildHttpParamsChain(IrOperation operation, TypeScriptParameterSources sources)
     {
         // Start with `new HttpParams()` then chain `.set('a', String(params.query.a))`
@@ -276,7 +280,7 @@ public sealed class AngularServiceAstBuilder
             var setCall = new CallExpressionNode(
                 new MemberAccessExpressionNode(chain, new IdentifierNode("set")),
                 ImmutableList.Create<ExpressionNode>(
-                    new LiteralExpressionNode(parameter.Name, LiteralKind.String),
+                    new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
                     coerced));
 
             if (!parameter.IsRequired)

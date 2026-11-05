@@ -4,6 +4,7 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.IR;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -76,7 +77,7 @@ public static class TypeScriptQueryString
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(Str(parameter.Name),
+                ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
             if (parameter.IsRequired)
                 statements.Add(setCall);
@@ -92,6 +93,25 @@ public static class TypeScriptQueryString
             new TemplateLiteralExpressionNode(ImmutableList.Create(new TemplateLiteralPart("?"), new TemplateLiteralPart(Id("query")))),
             Str(string.Empty));
         return new BinaryExpressionNode(urlExpr, BinaryOperator.Add, queryTail);
+    }
+
+    /// <summary>Builds a safe object property key for a query parameter's wire name.</summary>
+    /// <param name="parameter">The parameter with its source and generated names.</param>
+    /// <returns>A TypeScript identifier or a quoted string key.</returns>
+    public static string WirePropertyName(IrParameter parameter) =>
+        parameter.OriginalName == parameter.Name ? parameter.Name : System.Text.Json.JsonSerializer.Serialize(parameter.OriginalName);
+
+    /// <summary>Builds an Axios parameter object keyed by original wire names when names were sanitized.</summary>
+    /// <param name="operation">The source operation.</param>
+    /// <param name="source">The generated query object.</param>
+    /// <returns>The original object when no names differ; otherwise a wire-keyed object.</returns>
+    public static ExpressionNode BuildWireQueryObject(IrOperation operation, ExpressionNode source)
+    {
+        if (operation.QueryParameters.All(parameter => parameter.OriginalName == parameter.Name)) return source;
+        var properties = operation.QueryParameters.Select(parameter => new PropertyAssignmentNode(
+            new IdentifierNode(WirePropertyName(parameter)),
+            TypeScriptRequestPath.BuildParameterAccess(source, parameter.Name, mayBeUndefined: true))).ToImmutableList();
+        return new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true);
     }
 
     /// <summary>Builds an identifier expression.</summary>

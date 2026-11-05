@@ -69,8 +69,11 @@ public class AxiosAstBuilder
     }
     
     /// <summary>
-    /// Строит AxiosConfigNode с использованием params source
+    /// Builds an Axios configuration using the supplied parameter sources.
     /// </summary>
+    /// <param name="operation">The operation being generated.</param>
+    /// <param name="paramsSource">Expressions supplying operation parameters.</param>
+    /// <returns>The generated Axios configuration.</returns>
     public AxiosConfigNode BuildAxiosConfigWithParams(
         IrOperation operation,
         AxiosConfigParamsSource paramsSource)
@@ -104,7 +107,7 @@ public class AxiosAstBuilder
         {
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("params"),
-                paramsSource.QueryParamsSource));
+                TypeScriptQueryString.BuildWireQueryObject(operation, paramsSource.QueryParamsSource)));
         }
 
         if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -339,13 +340,15 @@ public class IrBuilder
         return list;
     }
     
-    /// <summary>
-    /// Извлекает ограничения из схемы
-    /// </summary>
+    /// <summary>Extracts property constraints using culture-independent OpenAPI number syntax.</summary>
+    /// <param name="schema">The property schema containing the constraints.</param>
+    /// <returns>The extracted constraints, or null when none are present.</returns>
     private IrPropertyConstraints? ExtractConstraints(IOpenApiSchema schema)
     {
         var hasConstraints = !string.IsNullOrEmpty(schema.Minimum) ||
                             !string.IsNullOrEmpty(schema.Maximum) ||
+                            !string.IsNullOrEmpty(schema.ExclusiveMinimum) ||
+                            !string.IsNullOrEmpty(schema.ExclusiveMaximum) ||
                             schema.MinLength.HasValue ||
                             schema.MaxLength.HasValue ||
                             !string.IsNullOrEmpty(schema.Pattern) ||
@@ -356,16 +359,16 @@ public class IrBuilder
         
         decimal? min = null;
         decimal? max = null;
-        if (decimal.TryParse(schema.Minimum, out var parsedMin))
+        if (decimal.TryParse(schema.Minimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMin))
             min = parsedMin;
-        if (decimal.TryParse(schema.Maximum, out var parsedMax))
+        if (decimal.TryParse(schema.Maximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMax))
             max = parsedMax;
         
         decimal? exclusiveMin = null;
         decimal? exclusiveMax = null;
-        if (decimal.TryParse(schema.ExclusiveMinimum, out var parsedExclusiveMin))
+        if (decimal.TryParse(schema.ExclusiveMinimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMin))
             exclusiveMin = parsedExclusiveMin;
-        if (decimal.TryParse(schema.ExclusiveMaximum, out var parsedExclusiveMax))
+        if (decimal.TryParse(schema.ExclusiveMaximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMax))
             exclusiveMax = parsedExclusiveMax;
         
         return new IrPropertyConstraints
