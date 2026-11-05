@@ -114,7 +114,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder
 
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();
         var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
-        var imports = BuildImports(operation, paramTypes, fileOrganization, annotatedInterfaces, fileBase, constraintConstNames);
+        var imports = BuildImports(paramTypes, fileOrganization, annotatedInterfaces, fileBase, constraintConstNames);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -141,8 +141,13 @@ public sealed class TypeScriptParamsSchemasAstBuilder
 
     /// <summary>Builds the imports for the params-schema file: schema runtime, the annotated params
     /// interface(s) (type-only, sibling <c>./{op}.params</c>), the shared UUID constant and any model schemas.</summary>
+    /// <param name="paramTypes">The route and query parameter types represented by this file.</param>
+    /// <param name="fileOrganization">The generated output layout.</param>
+    /// <param name="annotatedInterfaces">The interfaces used to annotate schemas.</param>
+    /// <param name="fileBase">The operation file stem.</param>
+    /// <param name="constraintConstNames">The generated validation constraint constants.</param>
+    /// <returns>The imports required by the generated schemas.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
-        IrOperation operation,
         IReadOnlyList<IrType> paramTypes,
         FileOrganization? fileOrganization,
         IReadOnlyCollection<string> annotatedInterfaces,
@@ -182,7 +187,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         // `pattern: UUID_PATTERN` must import the constant from the shared {modelsPath}/formats.ts file.
         if (_validation.UuidConstName != null
             && _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex
-            && UuidFormatSupport.OperationParamsUseUuid(operation))
+            && paramTypes.Any(UuidFormatSupport.ContainsUuid))
         {
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(_validation.UuidConstName)),

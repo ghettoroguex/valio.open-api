@@ -34,6 +34,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return VisitZodSchema(node);
     }
     
+    /// <inheritdoc />
     public override string VisitZodSchema(ZodSchemaNode node)
     {
         return node switch
@@ -42,6 +43,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
             ZodExpressionSchemaNode exprNode => VisitZodExpressionSchema(exprNode),
             ZodObjectNode obj => VisitZodObject(obj),
             ZodArrayNode array => VisitZodArray(array),
+            ZodRecordNode record => VisitZodRecord(record),
             ZodUnionNode union => VisitZodUnion(union),
             ZodIntersectionNode intersection => VisitZodIntersection(intersection),
             ZodEnumNode enumNode => VisitZodEnum(enumNode),
@@ -120,6 +122,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return VisitExpression(node.Expression);
     }
 
+    /// <inheritdoc />
     public override string VisitZodObject(ZodObjectNode node)
     {
         var sb = new StringBuilder();
@@ -144,7 +147,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
             {
                 sb.Append(",");
             }
-            CodeFormatter.AppendLine(sb, indentLevel, "");
+            sb.AppendLine();
         }
         
         indentLevel--;
@@ -154,6 +157,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return sb.ToString();
     }
     
+    /// <inheritdoc />
     public override string VisitZodProperty(ZodPropertyNode node)
     {
         var sb = new StringBuilder();
@@ -162,9 +166,12 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         var schema = Visit((AstNode)node.Schema);
         sb.Append(schema);
         
-        // Согласованно с TS-интерфейсом: nullish только при optional-ключе и/или nullable (IrNullableType → IsNullable).
-        if (!node.IsRequired || node.IsNullable)
+        if (node.IsNullable && !node.IsRequired)
             sb.Append(".nullish()");
+        else if (node.IsNullable)
+            sb.Append(".nullable()");
+        else if (!node.IsRequired)
+            sb.Append(".optional()");
         
         return sb.ToString();
     }
@@ -175,6 +182,17 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return $"z.array({elementSchema})";
     }
     
+    /// <summary>Renders a string-keyed record while preserving its value schema.</summary>
+    /// <param name="node">The record schema to render.</param>
+    /// <returns>The Zod record expression.</returns>
+    private string VisitZodRecord(ZodRecordNode node)
+    {
+        var value = Visit((AstNode)node.ValueSchema);
+        return node.DeferValueSchema
+            ? $"z.record(z.string(), z.lazy(() => {value}))"
+            : $"z.record(z.string(), {value})";
+    }
+
     public override string VisitZodUnion(ZodUnionNode node)
     {
         var variants = node.Variants.Select(v => Visit((AstNode)v));
@@ -200,6 +218,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return VisitLiteralExpression(node.Value);
     }
     
+    /// <inheritdoc />
     public override string VisitZodEffects(ZodEffectsNode node)
     {
         var sb = new StringBuilder();
@@ -232,7 +251,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
                 }
                 break;
             case ZodEffectKind.Optional:
-                sb.Append(".nullish()");
+                sb.Append(".optional()");
                 break;
             case ZodEffectKind.Nullable:
                 sb.Append(".nullable()");

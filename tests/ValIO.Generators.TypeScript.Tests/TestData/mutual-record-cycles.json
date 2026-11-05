@@ -1,0 +1,23 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Mutual records", "version": "1" },
+  "paths": {},
+  "components": { "schemas": {
+    "Alpha": {
+      "type": "object", "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "children": { "type": "object", "additionalProperties": {
+          "type": "array", "items": { "$ref": "#/components/schemas/Beta" }
+        } }
+      }
+    },
+    "Beta": {
+      "type": "object", "required": ["rank"],
+      "properties": {
+        "rank": { "type": "string" },
+        "children": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/Alpha" } }
+      }
+    }
+  } }
+}

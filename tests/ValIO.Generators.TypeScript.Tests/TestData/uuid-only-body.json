@@ -1,0 +1,33 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "UUID use",
+    "version": "1"
+  },
+  "paths": {
+    "/body": {
+      "post": {
+        "operationId": "postBodyOnly",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "empty"
+          }
+        }
+      }
+    }
+  }
+}

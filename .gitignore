@@ -54,3 +54,7 @@ packaging/npm/platforms/*/valio.exe
 # LICENSE copies dropped into each npm package by .github/scripts/prepare-npm.mjs
 packaging/npm/valio/LICENSE
 packaging/npm/platforms/*/LICENSE
+
+# Generated-schema contract test dependencies
+tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules/
+tests/ValIO.Generators.TypeScript.Tests/Runtime/valio-zod-contract-*/

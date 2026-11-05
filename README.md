@@ -73,6 +73,18 @@ export type Pet = z.infer<typeof Pet>;
 export async function getPetById(id: number): Promise<Pet> { /* ... */ }
 ```
 
+Generated TypeScript keeps field presence and JSON nullability independent: required values use
+`value: T`, required nullable values use `value: T | null`, optional values use `value?: T`, and
+optional nullable values use `value?: T | null`. Zod 3 and 4 follow the same four cases, and string-keyed
+records use `z.record(z.string(), valueSchema)`.
+
+For Axios, configure `axios.customInstancePath` and `axios.customInstanceName` to select the default
+instance (including its interceptors). Each generated endpoint also accepts an optional native
+`AxiosInstance` after `signal`; a supplied client overrides that default for the call. When an operation
+has response bodies, documented bodyless 2xx statuses are success variants with `body: undefined`.
+Operations with no documented bodies retain `Promise<void>`. The `uuidFormat: regex` option validates
+the entire UUID string, including uppercase and all-zero UUIDs.
+
 ### C# (HttpClient + System.Text.Json)
 
 ```bash

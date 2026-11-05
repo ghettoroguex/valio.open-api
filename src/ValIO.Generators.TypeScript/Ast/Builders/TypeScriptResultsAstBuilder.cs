@@ -86,9 +86,12 @@ public sealed class TypeScriptResultsAstBuilder
         return $"{namingConverter.ToPascalCase(operationName)}Result{suffix}";
     }
 
-    /// <summary>
-    /// Строит SourceFileNode с Result type (discriminated union) для операции
-    /// </summary>
+    /// <summary>Builds the discriminated result union, including documented bodyless success variants.</summary>
+    /// <param name="operation">The operation whose responses are represented.</param>
+    /// <param name="importPath">An optional import root.</param>
+    /// <param name="fileOrganization">The configured output paths.</param>
+    /// <param name="currentOperationName">The operation name used for declarations.</param>
+    /// <returns>The source file containing result interfaces and their union.</returns>
     public SourceFileNode BuildResultsSourceFile(
         IrOperation operation,
         string? importPath,
@@ -115,10 +118,12 @@ public sealed class TypeScriptResultsAstBuilder
         {
             var variantTypes = new List<TypeNode>();
 
-            foreach (var response in responsesWithType)
+            foreach (var response in operation.Responses.Where(r => r.Type != null || IsSuccessStatusCode(r.StatusCode)))
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
-                var bodyType = _typeBuilder(response.Type!);
+                var bodyType = response.Type is null
+                    ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
+                    : _typeBuilder(response.Type);
                 var isSuccess = IsSuccessStatusCode(response.StatusCode);
 
                 var variantInterfaceName = ResultVariantInterfaceName(currentOperationName, response.StatusCode);

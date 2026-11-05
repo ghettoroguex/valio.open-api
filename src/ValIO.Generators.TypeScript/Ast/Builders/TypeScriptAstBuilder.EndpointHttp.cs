@@ -350,6 +350,9 @@ public partial class TypeScriptAstBuilder
             useAsOperator: true);
     }
 
+    /// <summary>Builds a fetch request and handles bodyless successes before parsing JSON.</summary>
+    /// <param name="operation">The operation whose request and responses are emitted.</param>
+    /// <returns>The endpoint function body.</returns>
     private BlockNode BuildFetchFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
@@ -453,6 +456,29 @@ public partial class TypeScriptAstBuilder
             type: null,
             initializer: new AwaitExpressionNode(fetchCall)));
         statements.Add(CreateBlankLineStatement());
+
+        // Fetch must handle documented bodyless successes before attempting response.json().
+        var hasTypedResponses = operation.Responses.Any(r => r.Type != null);
+        foreach (var bodyless in operation.Responses.Where(r => r.Type is null
+            && int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300))
+        {
+            var code = int.Parse(bodyless.StatusCode);
+            ExpressionNode? returnValue = hasTypedResponses
+                ? new ObjectLiteralExpressionNode(new[]
+                {
+                    new PropertyAssignmentNode(new IdentifierNode("status"), new LiteralExpressionNode(code, LiteralKind.Number)),
+                    new PropertyAssignmentNode(new IdentifierNode("body"), new IdentifierExpressionNode(new IdentifierNode("undefined"))),
+                    new PropertyAssignmentNode(new IdentifierNode("isSuccessful"), new LiteralExpressionNode(true, LiteralKind.Boolean)),
+                    new PropertyAssignmentNode(new IdentifierNode("isFailed"), new LiteralExpressionNode(false, LiteralKind.Boolean))
+                }.ToImmutableList())
+                : null;
+            var status = new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("response")), new IdentifierNode("status"));
+            var matches = new BinaryExpressionNode(status, BinaryOperator.Equal, new LiteralExpressionNode(code, LiteralKind.Number));
+            statements.Add(new IfStatementNode(matches,
+                new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(returnValue))), null));
+        }
+        if (!hasTypedResponses)
+            return new BlockNode(statements.ToImmutableList());
 
         var jsonCall = new CallExpressionNode(
             new MemberAccessExpressionNode(

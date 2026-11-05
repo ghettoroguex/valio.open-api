@@ -50,8 +50,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
 
     /// <summary>
-    /// Рендерит SourceFile
+    /// Renders a complete TypeScript source file.
     /// </summary>
+    /// <param name="node">The source file to render.</param>
+    /// <returns>The rendered source, ending in one line break.</returns>
     public string Render(SourceFileNode node)
     {
         _sb.Clear();
@@ -71,7 +73,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         if (node.FileDocumentation != null)
         {
             RenderComment(_sb, node.FileDocumentation, 0);
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (node.Imports.Count > 0 || node.Declarations.Count > 0)
+                CodeFormatter.AppendEmptyLine(_sb);
         }
 
         // Рендерим imports
@@ -81,15 +84,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             {
                 RenderImport(import);
             }
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (node.Declarations.Count > 0)
+                CodeFormatter.AppendEmptyLine(_sb);
         }
         
         // Рендерим declarations (export уже добавлен в RenderInterface, RenderEnum, RenderTypeAlias)
-        foreach (var declaration in node.Declarations)
+        for (var i = 0; i < node.Declarations.Count; i++)
         {
-            var rendered = RenderDeclaration(declaration);
-            _sb.Append(rendered);
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (i > 0) CodeFormatter.AppendEmptyLine(_sb);
+            _sb.Append(RenderDeclaration(node.Declarations[i]));
         }
         
         return _sb.ToString();
@@ -258,9 +261,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"{RenderType(node.InnerType)} | null";
     }
 
+    /// <inheritdoc />
     public override string VisitOptionalType(OptionalTypeNode node)
     {
-        return $"{RenderType(node.InnerType)}?";
+        return $"({RenderType(node.InnerType)} | undefined)";
     }
 
     public override string VisitArrayType(ArrayTypeNode node)
@@ -269,7 +273,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var element = RenderType(node.ElementType);
         // Union/intersection-элемент нужно обернуть в скобки перед `[]`: без них `A | B | C[]` парсится
         // как `A | B | (C[])`, а не `(A | B | C)[]` (напр. массив дискриминированного объединения блоков).
-        if (node.ElementType is UnionTypeNode or IntersectionTypeNode)
+        if (node.ElementType is UnionTypeNode or IntersectionTypeNode or NullableTypeNode)
             element = $"({element})";
         return $"{readonlyStr}{element}[]";
     }
@@ -286,9 +290,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return types;
     }
 
+    /// <inheritdoc />
     public override string VisitIntersectionType(IntersectionTypeNode node)
     {
-        var types = string.Join(" & ", node.Types.Select(RenderType));
+        var types = string.Join(" & ", node.Types.Select(type =>
+            type is UnionTypeNode or NullableTypeNode ? $"({RenderType(type)})" : RenderType(type)));
         return types;
     }
 
@@ -525,6 +531,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"({condition} ? {trueExpr} : {falseExpr})";
     }
 
+    /// <inheritdoc/>
     public override string VisitBlock(BlockNode node)
     {
         var sb = new StringBuilder();
@@ -533,7 +540,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         foreach (var stmt in node.Statements)
         {
             var rendered = Visit(stmt);
-            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            if (rendered.Length == 0) sb.AppendLine();
+            else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
         }
         _indentLevel--;
         CodeFormatter.AppendLine(sb, _indentLevel, "}");
@@ -621,9 +629,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"{readonlyKeyword}{node.Name.Name}{optional}: {type}";
     }
 
-    /// <summary>
-    /// Рендерит PropertySignatureNode как член интерфейса (с JSDoc и точкой с запятой)
-    /// </summary>
+    /// <summary>Writes a property signature with its presence marker and documentation.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The property signature to render.</param>
+    /// <param name="indentLevel">The current indentation depth.</param>
     private void RenderPropertySignature(StringBuilder sb, PropertySignatureNode node, int indentLevel)
     {
         if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
@@ -633,7 +642,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         // Согласовано с RenderProperty: "?" при nullish-union (params/модели) и/или необязательном члене.
-        var optional = IsNullishValueUnionType(node.Type) || !node.IsRequired ? "?" : "";
+        var optional = !node.IsRequired || IsTypeOptional(node.Type) ? "?" : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{optional}: {type};");
     }
@@ -773,6 +782,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
+    /// <summary>Renders a function and its documentation.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The function declaration.</param>
+    /// <param name="indentLevel">The indentation level.</param>
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
         // Формируем расширенный JSDoc комментарий
@@ -906,7 +919,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
                     foreach (var stmt in node.Body.Statements)
                     {
                         var rendered = Visit(stmt);
-                        CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                        if (rendered.Length == 0) sb.AppendLine();
+                        else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
                     }
                     _indentLevel = savedIndent;
                 }
@@ -924,7 +938,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
                 foreach (var stmt in node.Body.Statements)
                 {
                     var rendered = Visit(stmt);
-                    CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                    if (rendered.Length == 0) sb.AppendLine();
+                    else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
                 }
                 _indentLevel = savedIndent;
             }
@@ -1000,6 +1015,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
+    /// <summary>Writes a model property with independent optional and nullable annotations.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The property to render.</param>
+    /// <param name="indentLevel">The current indentation depth.</param>
     private void RenderProperty(StringBuilder sb, PropertyDeclarationNode node, int indentLevel)
     {
         // Проверяем, является ли тип nullable или optional
@@ -1111,7 +1130,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // "?" при nullish-union из генератора и/или при отсутствии в OpenAPI required.
-        var optional = IsNullishValueUnionType(node.Type) || !node.IsRequired ? "?" : "";
+        var optional = !node.IsRequired || IsTypeOptional(node.Type) ? "?" : "";
         var isReadonly = node.IsReadOnly ? "readonly " : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
@@ -1146,9 +1165,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
                u.Types[1] is SimpleTypeNode st && st.Name.Name == "undefined";
     }
     
-    /// <summary>
-    /// Проверяет, является ли тип nullable
-    /// </summary>
+    /// <summary>Checks whether a type explicitly permits a null value.</summary>
+    /// <param name="type">The type to inspect.</param>
+    /// <returns>Whether the type permits null.</returns>
     private bool IsTypeNullable(TypeNode type)
     {
         return type switch
@@ -1156,7 +1175,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             NullableTypeNode => true,
             UnionTypeNode union when union.Types.Any(t =>
                 t is NullableTypeNode ||
-                t is SimpleTypeNode st && st.Name.Name is "null" or "undefined") => true,
+                t is SimpleTypeNode st && st.Name.Name == "null") => true,
             SimpleTypeNode simple when simple.IsNullable => true,
             ArrayTypeNode array when array.IsNullable => true,
             GenericTypeNode generic when generic.IsNullable => true,

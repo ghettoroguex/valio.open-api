@@ -43,13 +43,20 @@ public static class UuidFormatSupport
         return model.Composition != null && model.Composition.Types.Any(ContainsUuid);
     }
 
-    /// <summary>True if any path or query parameter of the operation is a uuid.</summary>
+    /// <summary>Checks path, query and header parameters for inline UUID types.</summary>
+    /// <param name="operation">The operation to inspect.</param>
+    /// <returns>Whether any parameter contains a UUID type.</returns>
     public static bool OperationParamsUseUuid(IrOperation operation)
         => operation.PathParameters.Any(p => ContainsUuid(p.Type))
-        || operation.QueryParameters.Any(p => ContainsUuid(p.Type));
+        || operation.QueryParameters.Any(p => ContainsUuid(p.Type))
+        || operation.HeaderParameters.Any(p => ContainsUuid(p.Type));
 
-    /// <summary>True if any model or operation parameter in the document uses a uuid.</summary>
+    /// <summary>Checks models, parameters, request bodies and responses for inline UUID types.</summary>
+    /// <param name="document">The document to inspect.</param>
+    /// <returns>Whether the generated validation may need the shared UUID format.</returns>
     public static bool DocumentUsesUuid(IrDocument document)
         => document.Models.Any(ModelUsesUuid)
-        || document.Clients.Any(c => c.Operations.Any(OperationParamsUseUuid));
+        || document.Clients.Any(c => c.Operations.Any(operation => OperationParamsUseUuid(operation)
+            || ContainsUuid(operation.RequestBody?.Type)
+            || operation.Responses.Any(response => ContainsUuid(response.Type))));
 }

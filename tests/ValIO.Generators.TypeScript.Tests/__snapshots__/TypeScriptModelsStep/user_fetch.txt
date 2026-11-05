@@ -22,8 +22,8 @@ export interface User {
      */
     email: string;
     /**
-     * @type {UserRole | null | undefined}
-     * @nullish
+     * @type {UserRole}
+     * @optional
      */
-    role?: UserRole | null | undefined;
+    role?: UserRole;
 }

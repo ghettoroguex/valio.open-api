@@ -202,7 +202,22 @@ worked examples of this end-to-end thread.
 
 ## 9. Writing tests
 
-Tests live under `tests/` (one project per source assembly), NUnit 4 + FluentAssertions. Run:
+Tests live under `tests/` (one project per source assembly), NUnit 4 + FluentAssertions.
+The TypeScript contract tests execute generated schemas with Zod 3 and Zod 4 and compile them
+with strict TypeScript. Node.js 18+ and the pinned runtime dependencies are required; missing
+dependencies fail these tests rather than skipping validation. CI prepares them on every host.
+Before a local test run (PowerShell):
+
+```powershell
+npm ci --ignore-scripts --prefix tests/ValIO.Generators.TypeScript.Tests/Runtime
+$env:VALIO_TEST_NODE_MODULES = Join-Path (Get-Location) 'tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules'
+```
+
+In a POSIX shell, export `VALIO_TEST_NODE_MODULES="$PWD/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules"`
+after the same `npm ci` command. Zod 3 is installed only as a compatibility-test alias; it is
+not a generator or generated-client runtime dependency.
+
+Run:
 
 ```bash
 dotnet test                                                   # everything

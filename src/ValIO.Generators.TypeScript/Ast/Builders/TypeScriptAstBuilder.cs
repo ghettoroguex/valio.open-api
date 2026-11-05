@@ -317,30 +317,41 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         };
     }
     
-    /// <summary>
-    /// Nullish в смысле OpenAPI/IR: ключ может отсутствовать, значение — <c>null</c> или тип допускает JSON-null.
-    /// </summary>
-    private static bool IsIrModelPropertyNullish(IrProperty property) =>
-        !property.IsRequired || property.Type is IrNullableType;
-    
-    /// <summary>
-    /// Тип поля интерфейса-модели: при nullish/optional — <c>(T | null) | undefined</c> и <c>?</c> в рендерере; иначе строго <c>T</c>.
-    /// </summary>
+    /// <summary>Builds a property value type without conflating absence and JSON null.</summary>
+    /// <param name="property">The property whose type may carry an optional wrapper.</param>
+    /// <returns>The value type; optionality is represented by the property marker.</returns>
     private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
     {
-        if (!IsIrModelPropertyNullish(property))
-            return BuildType(property.Type);
-        
-        var irCore = property.Type is IrNullableType n ? n.InnerType : property.Type;
-        var valueCore = BuildType(irCore);
-        var withNull = new NullableTypeNode(valueCore);
-        var undefinedType = new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true);
-        return new UnionTypeNode(ImmutableList.Create<TypeNode>(withNull, undefinedType));
+        return BuildType(UnwrapMemberOptional(property.Type));
     }
-    
+
+    /// <summary>Removes member-level optional wrappers while preserving nullable wrappers.</summary>
+    /// <param name="type">The source member type.</param>
+    /// <returns>The value type without member-level optional wrappers.</returns>
+    private static IrType UnwrapMemberOptional(IrType type) => type switch
+    {
+        IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
+        IrNullableType nullable => nullable with { InnerType = UnwrapMemberOptional(nullable.InnerType) },
+        _ => type
+    };
+
+    /// <summary>Detects optionality through nested nullable and optional wrappers.</summary>
+    /// <param name="type">The source member type.</param>
+    /// <returns>Whether the member permits omission.</returns>
+    internal static bool IsOptionalMemberType(IrType type) => type switch
+    {
+        IrOptionalType => true,
+        IrNullableType nullable => IsOptionalMemberType(nullable.InnerType),
+        _ => false
+    };
+
     /// <summary>
-    /// Строит SourceFile из IrModel
+    /// Builds the source file for a model.
     /// </summary>
+    /// <param name="model">The model to generate.</param>
+    /// <param name="importPath">The optional import path override.</param>
+    /// <param name="fileOrganization">The generated file organization.</param>
+    /// <returns>The model source file.</returns>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         OriginalNameMap.AddModel(_orig, model);
@@ -385,8 +396,10 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
 
     /// <summary>
-    /// Строит InterfaceDeclarationNode из IrModel
+    /// Builds an interface declaration from a model.
     /// </summary>
+    /// <param name="model">The model to generate.</param>
+    /// <returns>The interface declaration.</returns>
     public InterfaceDeclarationNode BuildInterface(IrModel model)
     {
         var name = new IdentifierNode(model.Name);
@@ -394,11 +407,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             ? new CommentNode(model.Description, CommentKind.JSDoc)
             : null;
         
-        // При наследовании (extends Base) не переобъявляем свойства базовых классов: собственный inline-член
-        // allOf мог переобъявить свойство базы (напр. nullable-дискриминатор) — это несовместимо перекрывает
-        // базу (TS2430). Единый резолвер наследования — общий для всех генераторов.
-        var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
-        var properties = ownProperties.Select(BuildProperty).ToList<DeclarationNode>();
+        // allOf intersects inherited and local constraints instead of discarding local overrides.
+        var inherited = CollectInheritedProperties(model);
+        var properties = model.Properties.Select(property =>
+            inherited.TryGetValue(property.OriginalName, out var bases)
+                ? BuildIntersectedProperty(property, bases)
+                : BuildProperty(property)).ToList<DeclarationNode>();
 
         var baseTypes = ImmutableList<TypeNode>.Empty;
         if (model.Composition?.Kind == IrCompositionKind.AllOf && model.Composition.Types.Count > 0)
@@ -418,10 +432,55 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             documentation: comment);
     }
     
+    /// <summary>Collects each inherited property declaration along the allOf inheritance graph.</summary>
+    /// <param name="model">The model whose bases are inspected.</param>
+    /// <returns>Inherited declarations indexed by their original wire name.</returns>
+    private Dictionary<string, List<IrProperty>> CollectInheritedProperties(IrModel model)
+    {
+        var result = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void Collect(IrModel current)
+        {
+            if (current.Composition is not { Kind: IrCompositionKind.AllOf } composition)
+                return;
+            foreach (var reference in composition.Types.OfType<IrModelReference>())
+            {
+                if (!visited.Add(reference.ModelName) || !ModelsByName.TryGetValue(reference.ModelName, out var parent))
+                    continue;
+                foreach (var property in parent.Properties)
+                {
+                    if (!result.TryGetValue(property.OriginalName, out var declarations))
+                        result[property.OriginalName] = declarations = [];
+                    declarations.Add(property);
+                }
+                Collect(parent);
+            }
+        }
+        Collect(model);
+        return result;
+    }
+
+    /// <summary>Intersects a local property with every inherited value and presence constraint.</summary>
+    /// <param name="property">The locally declared property.</param>
+    /// <param name="bases">Inherited declarations with the same wire name.</param>
+    /// <returns>A compatible property that preserves every allOf constraint.</returns>
+    private PropertyDeclarationNode BuildIntersectedProperty(IrProperty property, IReadOnlyList<IrProperty> bases)
+    {
+        var declarations = bases.Append(property).ToArray();
+        var types = declarations.Select(item => BuildType(UnwrapMemberOptional(item.Type))).ToImmutableList();
+        var required = declarations.Any(item => item.IsRequired && !IsOptionalMemberType(item.Type));
+        var comment = string.IsNullOrEmpty(property.Description) ? null : new CommentNode(property.Description, CommentKind.JSDoc);
+        var defaultValue = property.Constraints?.DefaultValue is { } value ? BuildLiteralFromValue(value) : null;
+        return new PropertyDeclarationNode(new IdentifierNode(property.Name), new IntersectionTypeNode(types),
+            isRequired: required, accessor: PropertyAccessorKind.Get, defaultValue: defaultValue,
+            documentation: comment, constraints: property.Constraints);
+    }
+
     /// <summary>
-    /// Строит PropertyDeclarationNode из IrProperty.
-    /// Интерфейсы-модели и Zod: nullish (<c>?</c>, <c>T | null | undefined</c>, <c>.nullish()</c>) только если свойство не в <c>required</c> и/или тип <see cref="IrNullableType"/>.
+    /// Builds a model property with independent presence and nullability semantics.
     /// </summary>
+    /// <param name="property">The source property.</param>
+    /// <returns>The corresponding property declaration.</returns>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
@@ -438,7 +497,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         return new PropertyDeclarationNode(
             name: name,
             type: type,
-            isRequired: property.IsRequired,
+            isRequired: property.IsRequired && !IsOptionalMemberType(property.Type),
             accessor: PropertyAccessorKind.Get,
             defaultValue: defaultValue,
             documentation: comment,
@@ -748,13 +807,23 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         };
     }
     
+    /// <summary>Collects all model references used by the emitted declaration.</summary>
+    /// <param name="model">The model to inspect.</param>
+    /// <returns>The names of referenced models.</returns>
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();
         
+        var inherited = CollectInheritedProperties(model);
         foreach (var property in model.Properties)
         {
             ExtractDependenciesFromType(property.Type, dependencies);
+            if (!inherited.TryGetValue(property.OriginalName, out var bases)) continue;
+            foreach (var parentProperty in bases)
+            {
+                OriginalNameMap.AddType(_orig, parentProperty.Type);
+                ExtractDependenciesFromType(parentProperty.Type, dependencies);
+            }
         }
         
         if (model.Composition != null)
@@ -974,28 +1043,23 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         }
     }
 
-    /// <summary>
-    /// Возвращает имя axios instance и соответствующий ImportNode.
-    /// Если заданы customInstancePath и customInstanceName — импортирует кастомный instance
-    /// как named export из указанного пути; иначе global <c>axios</c> (default import).
-    /// </summary>
-    private (string InstanceName, ImportNode Import) GetAxiosInstanceImport()
+    /// <summary>Builds the configured Axios default expression and its import.</summary>
+    /// <returns>The configured client expression and its matching module import.</returns>
+    private (ExpressionNode Instance, ImportNode Import) GetAxiosInstanceImport()
     {
         var path = _options?.Axios?.CustomInstancePath;
         var name = _options?.Axios?.CustomInstanceName;
 
         if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
         {
-            return (name, new ImportNode(
-                items: new[] { new IdentifierNode(name) }.ToImmutableList(),
-                from: NormalizeModuleSpecifier(path),
-                kind: ImportKind.Named));
+            return (new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("axiosDefaults")), new IdentifierNode(name)),
+                new ImportNode(items: ImmutableList.Create(new IdentifierNode("axiosDefaults")),
+                    from: NormalizeModuleSpecifier(path), kind: ImportKind.Namespace));
         }
 
-        return ("axios", new ImportNode(
-            items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
-            from: "axios",
-            kind: ImportKind.Default));
+        return (new IdentifierExpressionNode(new IdentifierNode("axios")), new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode("axios")), from: "axios", kind: ImportKind.Default));
     }
 
     /// <summary>
@@ -1022,7 +1086,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var result = new List<ImportNode>();
 
-        var (axiosInstanceName, axiosInstanceImport) = GetAxiosInstanceImport();
+        var (_, axiosInstanceImport) = GetAxiosInstanceImport();
         result.Add(axiosInstanceImport);
 
         result.Add(new ImportNode(
@@ -1087,10 +1151,10 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         AddValidationSchemaImports(result, operation, fileOrganization);
     }
 
-    /// <summary>
-    /// Импорты схем валидации для выбранной библиотеки: params-схемы (zod), вынесенные result-схемы,
-    /// model-схемы тела/голых-ответов и runtime-импорты (z / v / Type / Value).
-    /// </summary>
+    /// <summary>Adds the validation imports needed by the operation's generated client.</summary>
+    /// <param name="result">The imports to extend.</param>
+    /// <param name="operation">The operation whose inputs and responses are validated.</param>
+    /// <param name="fileOrganization">The configured output paths.</param>
     private void AddValidationSchemaImports(
         List<ImportNode> result,
         IrOperation operation,
@@ -1144,6 +1208,19 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 kind: ImportKind.Named));
         }
 
+        if (_validation.UuidConstName is { } uuidConst
+            && TypeScriptOptionIds.UuidFormat.Resolve(_options?.UuidFormat) == TypeScriptOptionIds.UuidFormat.Regex
+            && operation.RequestBody is { Type: var bodyType }
+            && ValidationTypes.IsValidatable(bodyType)
+            && ValidationTypes.NeedsConstructedSchema(bodyType)
+            && UuidFormatSupport.ContainsUuid(bodyType))
+        {
+            result.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
+                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+                kind: ImportKind.Named));
+        }
+
         // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
         result.AddRange(_validation.RuntimeImports(
             ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
@@ -1151,6 +1228,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
     // Приватные вспомогательные методы для IR операций
 
+    /// <summary>Builds endpoint parameters in transport-specific calling order.</summary>
+    /// <param name="operation">The operation to expose.</param>
+    /// <returns>Parameters including optional request controls and native client.</returns>
     private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
     {
         if (UseParamsStyleEndpointTransport())
@@ -1183,6 +1263,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: new SimpleTypeNode(new IdentifierNode("AbortSignal"), isPrimitive: false, isNullable: false, isOptional: false),
                 isRequired: false,
                 documentation: new CommentNode("Optional AbortSignal for request cancellation", CommentKind.JSDoc)));
+            if (_activeEndpointTransport == "axios")
+                endpointParams.Add(new ParameterDeclarationNode(
+                    name: new IdentifierNode("client"),
+                    type: new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false),
+                    isRequired: false,
+                    documentation: new CommentNode("Optional configured native HTTP client, including authentication and interceptors.", CommentKind.JSDoc)));
             return endpointParams.ToImmutableList();
         }
 
@@ -1242,9 +1328,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         };
     }
     
-    /// <summary>
-    /// Строит тело функции с Axios вызовами, params interface и Zod serialization/deserialization
-    /// </summary>
+    /// <summary>Builds the Axios request and maps documented status variants.</summary>
+    /// <param name="operation">The operation whose request and responses are emitted.</param>
+    /// <returns>The endpoint function body.</returns>
     private BlockNode BuildAxiosFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
@@ -1256,12 +1342,15 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var bodySource = ctx.BodySource;
         var headersSource = ctx.HeadersSource;
 
-        var (axiosInstanceName, _) = GetAxiosInstanceImport();
+        var (defaultAxiosInstance, _) = GetAxiosInstanceImport();
         var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("axiosInstance"),
             type: axiosInstanceType,
-            initializer: new IdentifierExpressionNode(new IdentifierNode(axiosInstanceName))));
+            initializer: new BinaryExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("client")),
+                BinaryOperator.NullishCoalescing,
+                defaultAxiosInstance)));
         statements.Add(CreateBlankLineStatement());
 
         var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
@@ -1337,7 +1426,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
+                .Where(r => int.TryParse(r.StatusCode, out var code) &&
+                    (r.Type != null || code >= 200 && code < 300))
                 .ToList();
 
             foreach (var resp in responsesWithType)
@@ -1347,7 +1437,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = BuildStatusResultBody(operation, resp, dataAccess);
+                var parseCall = resp.Type is null
+                    ? new IdentifierExpressionNode(new IdentifierNode("undefined"))
+                    : BuildStatusResultBody(operation, resp, dataAccess);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {

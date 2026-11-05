@@ -1,0 +1,112 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Zod contract",
+    "version": "1"
+  },
+  "paths": {
+    "/dictionaries": {
+      "post": {
+        "operationId": "postDictionaries",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Contract": {
+        "type": "object",
+        "required": [
+          "requiredValue",
+          "requiredNullable",
+          "requiredNullableDictionary"
+        ],
+        "properties": {
+          "requiredValue": {
+            "type": "string"
+          },
+          "requiredNullable": {
+            "type": "string",
+            "nullable": true
+          },
+          "optionalValue": {
+            "type": "string"
+          },
+          "optionalNullable": {
+            "type": "string",
+            "nullable": true
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "children": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Contract"
+            }
+          },
+          "optionalNullableArray": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "integer"
+            }
+          },
+          "requiredNullableDictionary": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "nullableValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

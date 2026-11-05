@@ -76,7 +76,7 @@ public static class TypeScriptOptionIds
         public const string Default = Guid;
 
         /// <summary>Format-only UUID regex source (no version/variant enforcement).</summary>
-        public const string Pattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+        public const string Pattern = @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![\s\S])";
 
         /// <summary>Name of the generated constant file (under the schemas folder) and its exports.</summary>
         public const string ConstFileName = "formats";

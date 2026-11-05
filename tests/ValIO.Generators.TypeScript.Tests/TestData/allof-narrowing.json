@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "AllOf narrowing", "version": "1" },
+  "paths": {},
+  "components": { "schemas": {
+    "Base": {
+      "type": "object", "required": ["name"],
+      "properties": { "name": { "type": "string" }, "id": { "type": "string", "nullable": true, "minLength": 3 } }
+    },
+    "Child": {
+      "allOf": [
+        { "$ref": "#/components/schemas/Base" },
+        { "type": "object", "required": ["id"], "properties": { "id": { "type": "string", "maxLength": 6 } } }
+      ]
+    }
+  } }
+}

@@ -458,9 +458,13 @@ public class IrBuilder
         return null;
     }
     
-    /// <summary>
-    /// Строит тип из схемы (рекурсивно)
-    /// </summary>
+    /// <summary>Recursively builds an IR type while preserving JSON nullability.</summary>
+    /// <param name="schema">The OpenAPI schema to translate.</param>
+    /// <param name="document">The document containing referenced schemas.</param>
+    /// <param name="propertyContext">The containing property context, when present.</param>
+    /// <returns>The translated IR type.</returns>
+    /// <exception cref="ArgumentNullException">The schema or document is null.</exception>
+    /// <exception cref="InvalidOperationException">The schema cannot be resolved or its type is unsupported.</exception>
     private IrType BuildType(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext = null)
     {
         if (schema == null)
@@ -484,6 +488,12 @@ public class IrBuilder
         
         if (resolvedSchema == null)
             throw new InvalidOperationException($"Schema resolver returned null schema — at {_ctx.Describe()}");
+
+        /// <summary>Applies only this schema's JSON-null allowance to a constructed type.</summary>
+        /// <param name="core">The non-null constructed type.</param>
+        /// <returns>The original type or an idempotent nullable wrapper.</returns>
+        IrType PreserveNullability(IrType core) => SchemaAllowsJsonNull(resolvedSchema)
+            ? IrCompositionNormalizer.WrapNullable(core) : core;
         
         // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type).
         // Нормализуем: чистые null-ветки ({type:null}) превращаем в nullable-обёртку, а не в член union;
@@ -532,7 +542,7 @@ public class IrBuilder
                     {
                         var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
                         var valueType = BuildType(schemaValue, document, propertyContext);
-                        return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                        return PreserveNullability(new IrDictionaryType { KeyType = keyType, ValueType = valueType });
                     }
                     
                     // Если это не IOpenApiSchema, это может быть boolean false
@@ -545,7 +555,7 @@ public class IrBuilder
                 var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
                 var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
                 _inlineModels[inlineModelName] = inlineModel;
-                return new IrModelReference { ModelName = inlineModelName };
+                return PreserveNullability(new IrModelReference { ModelName = inlineModelName });
             }
             
             // Если есть AdditionalProperties, это словарь
@@ -553,7 +563,7 @@ public class IrBuilder
             {
                 var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
                 var valueType = BuildType(resolvedSchema.AdditionalProperties, document, propertyContext);
-                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                return PreserveNullability(new IrDictionaryType { KeyType = keyType, ValueType = valueType });
             }
             
             // Если ничего нет, возвращаем any
@@ -592,7 +602,7 @@ public class IrBuilder
             var elementType = WithContext(
                 _ctx with { PropertyPath = SuffixLastSegment(_ctx.PropertyPath, "[]") },
                 () => BuildType(items, document, propertyContext));
-            return new IrArrayType { ElementType = elementType };
+            return PreserveNullability(new IrArrayType { ElementType = elementType });
         }
         
         // Object - проверяем, является ли это словарем или объектом с фиксированными свойствами
@@ -607,7 +617,7 @@ public class IrBuilder
                 {
                     var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
                     var valueType = BuildType(schemaValue, document);
-                    return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                    return PreserveNullability(new IrDictionaryType { KeyType = keyType, ValueType = valueType });
                 }
                 
                 // Если это не IOpenApiSchema, это может быть boolean false
@@ -623,13 +633,13 @@ public class IrBuilder
                 var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
                 var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
                 _inlineModels[inlineModelName] = inlineModel;
-                return new IrModelReference { ModelName = inlineModelName };
+                return PreserveNullability(new IrModelReference { ModelName = inlineModelName });
             }
             
             // Пустой объект без Properties и AdditionalProperties
             var emptyValueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
             var emptyKeyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-            return new IrDictionaryType { KeyType = emptyKeyType, ValueType = emptyValueType };
+            return PreserveNullability(new IrDictionaryType { KeyType = emptyKeyType, ValueType = emptyValueType });
         }
         
         var typeStr = resolvedSchema.Type?.ToString() ?? "null";

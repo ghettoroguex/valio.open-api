@@ -6,9 +6,9 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
+using ValIO.Core.IR.Builders;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
-using ValIO.Core.IR.Utilities;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 
@@ -20,12 +20,8 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 /// </summary>
 public class ZodAstBuilder
 {
-    /// <summary>
-    /// Справочник моделей документа (по <see cref="IrModel.Name"/>) для резолва наследования allOf.
-    /// При наследовании z-схема строится как <c>z.intersection([BaseSchema, z.object({...ownProps})])</c>;
-    /// собственный object НЕ должен переобъявлять свойства базы (иначе выведенный тип не совпадает с
-    /// интерфейсом — TS2322). По умолчанию пуст — фильтрация не применяется.
-    /// </summary>
+    /// <summary>Gets or sets the document models available for schema composition.</summary>
+    /// <value>The models keyed by their IR names.</value>
     public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
 
     private readonly INamingConverter _namingConverter;
@@ -52,11 +48,9 @@ public class ZodAstBuilder
         _uuidFormat = uuidFormat;
     }
     
-    /// <summary>
-    /// Строит ZodSchemaNode из IrModel с учётом oneOf, allOf, anyOf
-    /// </summary>
-    /// <param name="model">IR модель</param>
-    /// <returns>AST узел Zod схемы (object, union или intersection)</returns>
+    /// <summary>Builds a model schema, preserving every inherited and locally declared allOf constraint.</summary>
+    /// <param name="model">The model and its composition to translate.</param>
+    /// <returns>A Zod object, union or intersection schema.</returns>
     public ZodSchemaNode BuildZodSchemaFromIrModel(IrModel model)
     {
         if (model.Composition != null && model.Composition.Types.Count > 0)
@@ -88,12 +82,10 @@ public class ZodAstBuilder
                     var allOfSchemas = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
                         .ToList();
-                    // Свойства базы приходят из BaseSchema (первый член intersection); собственный object
-                    // не переобъявляет их, иначе выведенный тип object не совпадает с интерфейсом (TS2322).
-                    var allOfOwnProps = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
-                    if (allOfOwnProps.Count > 0)
+                    // A local declaration may narrow a base property; both schemas must validate it.
+                    if (model.Properties.Count > 0)
                     {
-                        var ownPropsSchema = BuildZodObject(model, allOfOwnProps);
+                        var ownPropsSchema = BuildZodObject(model, model.Properties);
                         allOfSchemas.Add(ownPropsSchema);
                     }
                     if (allOfSchemas.Count == 0)
@@ -128,9 +120,9 @@ public class ZodAstBuilder
         return new ZodObjectNode(props);
     }
 
-    /// <summary>
-    /// Строит ZodObjectNode из списка IrParameter (для route/query params)
-    /// </summary>
+    /// <summary>Builds an object schema for route or query parameters.</summary>
+    /// <param name="parameters">The parameter definitions to translate.</param>
+    /// <returns>A Zod object schema retaining parameter optionality and nullability.</returns>
     public ZodObjectNode BuildZodObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
@@ -149,13 +141,11 @@ public class ZodAstBuilder
         return new ZodObjectNode(properties);
     }
     
-    /// <summary>
-    /// Строит ZodPropertyNode из IrProperty
-    /// </summary>
-    /// <param name="property">IR свойство</param>
-    /// <param name="currentModelName">Имя текущей модели (для constraints ref и self-reference)</param>
-    /// <param name="constraintsObjectName">Имя const объекта с метаданными валидации (например MyModelConstraints), null если не генерируем</param>
-    /// <returns>AST узел Zod property</returns>
+    /// <summary>Builds a property schema with independent required and nullable decisions.</summary>
+    /// <param name="property">The IR property to translate.</param>
+    /// <param name="currentModelName">The containing model for constraints and self-references.</param>
+    /// <param name="constraintsObjectName">The generated constraints constant, if present.</param>
+    /// <returns>The property node and its value schema.</returns>
     public ZodPropertyNode BuildZodProperty(IrProperty property, string? currentModelName = null, string? constraintsObjectName = null)
     {
         var name = new IdentifierNode(property.Name);
@@ -171,13 +161,12 @@ public class ZodAstBuilder
             isOptional: !property.IsRequired);
     }
     
-    /// <summary>
-    /// Строит ZodSchemaNode из IrType
-    /// </summary>
-    /// <param name="irType">IR тип</param>
-    /// <param name="currentModelName">Имя текущей модели</param>
-    /// <param name="property">Контекст свойства (для constraints), null для параметров</param>
-    /// <param name="constraintsObjectName">Имя const объекта (MyModelConstraints)</param>
+    /// <summary>Builds a Zod schema from an IR type, preserving nested type information.</summary>
+    /// <param name="irType">The type to translate.</param>
+    /// <param name="currentModelName">The containing model, if any.</param>
+    /// <param name="property">The property supplying constraints, if any.</param>
+    /// <param name="constraintsObjectName">The generated constraints constant, if present.</param>
+    /// <returns>The translated Zod schema.</returns>
     public ZodSchemaNode BuildZodSchemaFromIrType(
         ValIO.Core.IR.Types.IrType irType,
         string? currentModelName = null,
@@ -195,7 +184,7 @@ public class ZodAstBuilder
                 property?.Description),
             IrModelReference r => BuildZodModelReference(r, currentModelName),
             IrArrayType arr => BuildZodArray(arr, currentModelName),
-            IrDictionaryType dict => BuildZodDictionary(dict),
+            IrDictionaryType dict => BuildZodDictionary(dict, currentModelName),
             IrUnionType union => BuildZodUnion(union, currentModelName, property, constraintsObjectName),
             IrIntersectionType intersection => BuildZodIntersection(intersection, currentModelName, property, constraintsObjectName),
             IrNullableType nullable => BuildZodNullable(nullable, currentModelName, property, constraintsObjectName),
@@ -300,13 +289,16 @@ public class ZodAstBuilder
         return new ZodArrayNode(elementSchema);
     }
     
-    /// <summary>
-    /// Строит Zod схему из IrDictionaryType
-    /// </summary>
-    private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType)
+    /// <summary>Builds a string-keyed record and retains the value schema and recursive model context.</summary>
+    /// <param name="dictionaryType">The dictionary type to translate.</param>
+    /// <param name="currentModelName">The containing model, used to resolve self-references lazily.</param>
+    /// <returns>A Zod record schema with the translated value type.</returns>
+    private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType, string? currentModelName)
     {
-        _ = BuildZodSchemaFromIrType(dictionaryType.ValueType, null, null, null);
-        return BuildZodAny();
+        var valueSchema = BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName);
+        var dependencies = new IrTypeDependencyGraphBuilder().ExtractDependenciesFromType(dictionaryType.ValueType);
+        var deferValue = dependencies.Any(name => !string.Equals(name, currentModelName, StringComparison.OrdinalIgnoreCase));
+        return new ZodRecordNode(valueSchema, deferValueSchema: deferValue);
     }
     
     /// <summary>

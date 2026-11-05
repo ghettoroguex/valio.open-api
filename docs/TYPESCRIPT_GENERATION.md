@@ -32,6 +32,29 @@ ValIO поддерживает генерацию TypeScript клиентов, �
 - **Сериализация** - валидация и преобразование данных перед отправкой запроса
 - **Десериализация** - валидация и преобразование данных после получения ответа (например, преобразование строк в даты)
 
+## Presence, nullability, and HTTP results
+
+TypeScript properties preserve independent OpenAPI presence and nullability:
+
+| Required | Nullable | Generated property | Zod property |
+| --- | --- | --- | --- |
+| yes | no | `value: T` | `schema` |
+| yes | yes | `value: T \| null` | `schema.nullable()` |
+| no | no | `value?: T` | `schema.optional()` |
+| no | yes | `value?: T \| null` | `schema.nullish()` |
+
+Zod 3 and Zod 4 both emit string-keyed dictionaries as `z.record(z.string(), valueSchema)`.
+`uuidFormat: regex` validates a complete UUID, accepts uppercase and the all-zero UUID, and rejects
+prefixes, suffixes, and embedded newlines. Shared format imports are emitted for schemas that use them.
+
+Axios clients accept `client?: AxiosInstance` after `signal`. If omitted, they use the configured
+`axios.customInstancePath` and `axios.customInstanceName` instance, preserving its interceptors.
+When at least one response has a body, a documented bodyless 2xx response remains a successful result
+variant with `body: undefined`; operations without response bodies return `Promise<void>`.
+For `allOf`, local redeclarations intersect inherited presence and value constraints. Multiple base
+interfaces that independently declare incompatible properties retain TypeScript's existing `extends`
+limitation and may require a schema redesign.
+
 ## Конфигурация
 
 ### Базовый пример

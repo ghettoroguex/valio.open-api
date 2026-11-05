@@ -40,11 +40,12 @@ public sealed class TypeScriptResultsSchemasStep : ICodeGenerationStep
         return ClientValidationStrategyFactory.Create(opts).IsEnabled;
     }
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var validation = ClientValidationStrategyFactory.Create(opts);
-        var builder = new TypeScriptResultsSchemasAstBuilder(_namingConverter, validation);
+        var builder = new TypeScriptResultsSchemasAstBuilder(_namingConverter, validation, opts?.UuidFormat);
 
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";

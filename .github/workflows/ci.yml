@@ -83,7 +83,19 @@ jobs:
       - name: Build
         run: dotnet build ValIO.sln -c Release --no-restore
 
+      - name: Setup Node for generated schema contracts
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/ValIO.Generators.TypeScript.Tests/Runtime/package-lock.json
+
+      - name: Install generated schema contract dependencies
+        run: npm ci --ignore-scripts --prefix tests/ValIO.Generators.TypeScript.Tests/Runtime
+
       - name: Test
+        env:
+          VALIO_TEST_NODE_MODULES: ${{ github.workspace }}/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules
         run: >
           dotnet test ValIO.sln
           -c Release

@@ -32,15 +32,16 @@ internal sealed class ZodSchemaExpressionBuilder
     /// </summary>
     /// <param name="type">The IR type to build a schema for.</param>
     /// <param name="coerceParams">
-    /// When <see langword="true"/>, numeric/boolean primitives use <c>z.coerce.*</c> — for route/query
-    /// parameters, which always arrive as strings. Response/body schemas pass <see langword="false"/>.
+    /// When <see langword="true"/>, numeric/boolean primitives use <c>z.coerce.*</c> for route/query parameters.
     /// </param>
+    /// <returns>The schema expression for the supplied type.</returns>
     public ExpressionNode Build(IrType type, bool coerceParams = false) =>
         type switch
         {
             IrModelReference reference => Id($"{reference.ModelName}Schema"),
             IrArrayType array => Call(Member(Id("z"), "array"), Build(array.ElementType, coerceParams)),
-            IrDictionaryType dictionary => Call(Member(Id("z"), "record"), Build(dictionary.ValueType, coerceParams)),
+            IrDictionaryType dictionary => Call(Member(Id("z"), "record"),
+                Call(Member(Id("z"), "string")), Build(dictionary.ValueType, coerceParams)),
             IrNullableType nullable => Call(Member(Build(nullable.InnerType, coerceParams), "nullable")),
             IrOptionalType optional => Call(Member(Build(optional.InnerType, coerceParams), "optional")),
             IrUnionType union => Call(

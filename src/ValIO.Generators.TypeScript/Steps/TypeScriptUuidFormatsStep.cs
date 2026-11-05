@@ -1,4 +1,5 @@
 using System.Text;
+using ValIO.Core.Utilities;
 using ValIO.Core.Plugins;
 using ValIO.Generators.TypeScript.Options;
 
@@ -26,6 +27,7 @@ public sealed class TypeScriptUuidFormatsStep : ICodeGenerationStep
         return UuidFormatSupport.DocumentUsesUuid(context.IrDocument);
     }
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var fileOrg = context.Configuration.FileOrganization;
@@ -33,7 +35,7 @@ public sealed class TypeScriptUuidFormatsStep : ICodeGenerationStep
 
         var sb = new StringBuilder();
         sb.AppendLine("// Shared format patterns for generated validation schemas.");
-        sb.AppendLine($"export const {TypeScriptOptionIds.UuidFormat.PatternConstName} = \"{TypeScriptOptionIds.UuidFormat.Pattern}\";");
+        sb.AppendLine($"export const {TypeScriptOptionIds.UuidFormat.PatternConstName} = \"{CodeEscapeHelper.EscapeTypeScriptString(TypeScriptOptionIds.UuidFormat.Pattern)}\";");
         sb.AppendLine($"export const {TypeScriptOptionIds.UuidFormat.RegexConstName} = new RegExp({TypeScriptOptionIds.UuidFormat.PatternConstName});");
 
         var relativePath = $"{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}.ts";

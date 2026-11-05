@@ -1,0 +1,30 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "UUID use",
+    "version": "1"
+  },
+  "paths": {
+    "/header": {
+      "get": {
+        "operationId": "getHeaderOnly",
+        "parameters": [
+          {
+            "name": "traceId",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "empty"
+          }
+        }
+      }
+    }
+  }
+}

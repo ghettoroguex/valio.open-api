@@ -7,6 +7,7 @@ using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Validation;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -19,14 +20,22 @@ public sealed class TypeScriptResultsSchemasAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
+    /// <summary>Whether generated schemas use the shared UUID regular expression.</summary>
+    private readonly bool _usesUuidRegex;
 
     /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
     private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    internal TypeScriptResultsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation)
+    /// <summary>Creates a builder for named response schemas.</summary>
+    /// <param name="namingConverter">The naming converter for generated symbols.</param>
+    /// <param name="validation">The configured validation strategy.</param>
+    /// <param name="uuidFormat">The configured UUID validation mode.</param>
+    /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
+    internal TypeScriptResultsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+        _usesUuidRegex = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat) == TypeScriptOptionIds.UuidFormat.Regex;
     }
 
     /// <summary>
@@ -79,6 +88,10 @@ public sealed class TypeScriptResultsSchemasAstBuilder
                 $"Response body validation schemas for {operation.MethodName}."));
     }
 
+    /// <summary>Builds runtime imports for the schemas declared in a response file.</summary>
+    /// <param name="definedTypes">The materialized response types requiring schemas.</param>
+    /// <param name="fileOrganization">The generated output layout.</param>
+    /// <returns>Imports for validation, UUID constants and referenced model schemas.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<ValIO.Core.IR.Types.IrType> definedTypes, FileOrganization? fileOrganization)
     {
         var imports = new List<ImportNode>();
@@ -87,6 +100,13 @@ public sealed class TypeScriptResultsSchemasAstBuilder
         // Model schemas are co-located under modelsPath; this results-schema file sits at
         // {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.
         var modelsPath = fileOrganization?.ModelsPath ?? "models";
+        if (_usesUuidRegex && _validation.UuidConstName is { } uuidConst && definedTypes.Any(UuidFormatSupport.ContainsUuid))
+        {
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
+                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+                kind: ImportKind.Named));
+        }
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in definedTypes)
             ValidationTypes.CollectModelSchemaNames(type, modelNames);
