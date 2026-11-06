@@ -287,15 +287,45 @@ public class ZodAstBuilder : AstBuilderBase
     }
     
     /// <summary>
-    /// Строит Zod схему из IrModelReference.
-    /// При self-reference (modelReference.ModelName == currentModelName) использует z.lazy().
+    /// Builds a named reference and defers edges belonging to direct or mutual recursion.
     /// </summary>
+    /// <param name="modelReference">The referenced declaration.</param>
+    /// <param name="currentModelName">The containing model, if this reference belongs to a model schema.</param>
+    /// <returns>A schema reference whose evaluation is lazy only when it closes a dependency cycle.</returns>
     private ZodSchemaNode BuildZodModelReference(IrModelReference modelReference, string? currentModelName = null)
     {
         var schemaName = $"{modelReference.ModelName}Schema";
         var isLazy = !string.IsNullOrEmpty(currentModelName)
-            && string.Equals(modelReference.ModelName, currentModelName, StringComparison.OrdinalIgnoreCase);
+            && IsRecursiveReference(currentModelName, modelReference.ModelName);
         return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any, schemaReference: schemaName, isLazy: isLazy);
+    }
+
+    /// <summary>Determines whether the referenced declaration can reach the containing model.</summary>
+    /// <param name="currentModelName">The source of the reference being rendered.</param>
+    /// <param name="referencedModelName">The target declaration whose dependencies are traversed.</param>
+    /// <returns>True when this edge belongs to a dependency cycle; otherwise false.</returns>
+    /// <remarks>
+    /// The finalized IR graph already includes references inside arrays, records, nullable values,
+    /// and composition members. Iterative traversal also terminates when an unrelated cycle is reachable.
+    /// </remarks>
+    private bool IsRecursiveReference(string currentModelName, string referencedModelName)
+    {
+        var dependencies = DocumentContext.Document.TypeDependencies.Dependencies;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>();
+        pending.Push(referencedModelName);
+
+        while (pending.TryPop(out var candidate))
+        {
+            if (string.Equals(candidate, currentModelName, StringComparison.Ordinal))
+                return true;
+            if (!visited.Add(candidate) || !dependencies.TryGetValue(candidate, out var referencedTypes))
+                continue;
+            foreach (var dependency in referencedTypes)
+                pending.Push(dependency);
+        }
+
+        return false;
     }
     
     /// <summary>
