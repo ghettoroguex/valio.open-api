@@ -15,14 +15,15 @@ public sealed class DefaultValuesGenerationTests
     private const string Contract = """
     {"openapi":"3.0.3","info":{"title":"Defaults","version":"1"},
      "paths":{"/items/{id}":{"get":{"operationId":"getItems","parameters":[
-       {"name":"id","in":"path","required":true,"schema":{"type":"integer","default":0}},
-       {"name":"active","in":"query","required":true,"schema":{"type":"boolean","default":false}},
-       {"name":"text","in":"query","schema":{"type":"string","default":""}}
+       {"name":"id","in":"path","required":true,"description":"Путь первая\r\nПуть вторая","schema":{"type":"integer","default":0}},
+       {"name":"active","in":"query","required":true,"description":"Флаг первая\rФлаг вторая","schema":{"type":"boolean","default":false}},
+       {"name":"text","in":"query","description":"Текст первая\nТекст вторая","schema":{"type":"string","default":""}}
      ],"responses":{"200":{"description":"ok"}}}}},
-     "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing"],"properties":{
+     "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing","nullableRequired"],"properties":{
        "MobileVisible":{"type":"boolean","default":true,"description":"Первая строка\nВторая строка\nТретья строка"},"disabled":{"type":"boolean","default":false},
        "count":{"type":"integer","minimum":0,"default":0},"text":{"type":"string","default":""},
        "missing":{"type":"string"},"nullable":{"type":"string","nullable":true,"default":null},
+       "nullableRequired":{"type":"string","nullable":true},
        "items":{"type":"array","items":{"type":"integer"},"default":[0,1]},
        "config":{"type":"object","default":{"foo-bar":"x","a b":false}}
      }}}}}
@@ -44,6 +45,11 @@ public sealed class DefaultValuesGenerationTests
         var parameters = context.GeneratedFiles.Single(f => f.RelativePath.EndsWith(".params.ts")).Content;
         model.Should().Contain("MobileVisible: boolean;").And.Contain("@default true");
         model.Should().MatchRegex(@"\* @description Первая строка\r?\n\s*\* Вторая строка\r?\n\s*\* Третья строка");
+        model.Should().MatchRegex(@"\* @type \{boolean\}\r?\n\s*\* @required\r?\n\s*\* @default true\r?\n\s*\*/\r?\n\s*MobileVisible: boolean;");
+        model.Should().MatchRegex(@"\* @required\r?\n\s*\* @nullable\r?\n\s*\*/\r?\n\s*nullableRequired: string \| null;");
+        parameters.Should().MatchRegex(@"\* Путь первая\r?\n\s*\* Путь вторая\r?\n\s*\* @required\r?\n\s*\*/\r?\n\s*id: number;");
+        parameters.Should().MatchRegex(@"\* Флаг первая\r?\n\s*\* Флаг вторая\r?\n\s*\* @required\r?\n\s*\*/\r?\n\s*active: boolean;");
+        parameters.Should().MatchRegex(@"\* Текст первая\r?\n\s*\* Текст вторая\r?\n\s*\* @optional\r?\n\s*\*/\r?\n\s*text\?: string;");
         model.Should().Contain("SettingsConstraints");
         if (!enabled)
         {
