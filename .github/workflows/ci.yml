@@ -195,6 +195,10 @@ jobs:
       - name: List packages
         run: ls -lh nupkgs
 
+      - name: Validate library package dependency closure
+        shell: pwsh
+        run: ./.github/scripts/validate-nuget-closure.ps1 -PackageDirectory nupkgs -ExpectedVersion 0.0.0-ci.${{ github.run_number }}
+
       - name: Install and smoke test the NuGet tool
         run: bash .github/scripts/smoke-nuget.sh nupkgs 0.0.0-ci.${{ github.run_number }}
 

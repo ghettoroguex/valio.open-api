@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Configuration</PackageId>
+    <Description>ValIO project configuration loading and validation for JSON and YAML files.</Description>
+    <PackageTags>valio;openapi;codegen;configuration;json;yaml</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

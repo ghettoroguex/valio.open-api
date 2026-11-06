@@ -125,6 +125,12 @@ jobs:
           -o nupkgs
           -p:Version=${{ needs.version.outputs.version }}
 
+      - name: Validate library package dependency closure
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: ./.github/scripts/validate-nuget-closure.ps1 -PackageDirectory nupkgs -ExpectedVersion $env:VERSION
+
       - name: Install and smoke test the NuGet tool
         env:
           VERSION: ${{ needs.version.outputs.version }}
