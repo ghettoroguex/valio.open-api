@@ -120,7 +120,7 @@ jobs:
     env:
       # CMakeDeps validates the configuration even with a single-config generator.
       CMAKE_BUILD_TYPE: Debug
-      CMAKE_GENERATOR: ${{ matrix.os == 'windows-latest' && 'Visual Studio 17 2022' || 'Ninja' }}
+      CMAKE_GENERATOR: Ninja
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
     strategy:
       fail-fast: false
