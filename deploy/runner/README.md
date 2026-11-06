@@ -86,6 +86,10 @@ Confirm GitHub shows this runner **Idle** with labels `self-hosted`, `Linux`,
 workflows using this runner to reviewed default-branch deployment jobs; public
 pull requests must not target it. Do not set it as the general Linux CI runner.
 
+After registration, run the **Runner diagnostics** workflow on the default branch
+to confirm the runner can execute a real job and access rootless Docker, Compose,
+and its persistent deployment directory. It does not start the web application.
+
 ## Enable deployment
 
 Create the application `.env` inside the persistent deployment volume before

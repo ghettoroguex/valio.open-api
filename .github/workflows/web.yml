@@ -71,8 +71,9 @@ jobs:
             --volume /home/app/.aspnet/DataProtection-Keys \
             --publish 127.0.0.1:18080:8080 valio-web:ci
           trap 'docker logs valio-web-smoke; docker rm --force --volumes valio-web-smoke' EXIT
-          curl --fail --silent --show-error --retry 30 --retry-delay 2 \
-            --retry-connrefused http://127.0.0.1:18080/healthz
+          curl --fail --silent --show-error --max-time 5 \
+            --retry 30 --retry-delay 2 --retry-max-time 90 --retry-all-errors \
+            http://127.0.0.1:18080/healthz
           python3 deploy/web/smoke.py http://127.0.0.1:18080
 
       - name: Login to GitHub Container Registry

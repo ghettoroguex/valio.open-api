@@ -12,6 +12,7 @@ build the web application, and deploy documentation.
 | [Web](../.github/workflows/web.yml) | Relevant PRs/ordinary branches; Release call | Builds a non-root image, tests HTTP generation, publishes from `main` |
 | [Docs](../.github/workflows/docs.yml) | Documentation changes on `main`, manual dispatch on `main` | Deploys GitHub Pages |
 | [CodeQL](../.github/workflows/codeql.yml) | PRs, release branches, schedule | C# and TypeScript analysis |
+| [Runner diagnostics](../.github/workflows/runner.yml) | Manual dispatch on the default branch | Verifies rootless Docker, Compose and persistent deployment storage |
 
 Release invokes CI for publishing branches, avoiding duplicate matrices on push.
 Legacy `master` and feature branches validate without publishing.
@@ -165,3 +166,5 @@ dotnet pack ValIO.sln -c Release -o nupkgs
 
 C++ compile fixtures require native toolchains and run separately in CI. Some
 runtime integration cases are opt-in or skip when external tools are absent.
+The native CI job provisions pinned header libraries with Conan and UUID provider
+sources at fixed commits before compiling generated C++17/20/23 clients.

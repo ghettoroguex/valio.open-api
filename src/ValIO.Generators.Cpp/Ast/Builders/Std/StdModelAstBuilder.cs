@@ -55,10 +55,12 @@ public sealed class StdModelAstBuilder : AstBuilderBase
         var plan = IrInheritancePlan.Resolve(model, modelLookup);
         CppTypeReferenceCollector.EnsureNonRecursive(model, plan.EffectiveProperties, enumNames);
 
+        var memberNames = plan.EffectiveProperties.Select(property => _naming.PropertyName(property.Name))
+            .ToHashSet(StringComparer.Ordinal);
         var fields = new List<FieldDeclarationNode>();
         foreach (var property in plan.EffectiveProperties)
         {
-            fields.Add(BuildField(property, rootNamespace));
+            fields.Add(BuildField(property, rootNamespace, memberNames));
         }
 
         var structNode = new StructDeclarationNode(
@@ -80,10 +82,11 @@ public sealed class StdModelAstBuilder : AstBuilderBase
     /// <summary>Builds one field without collapsing missing keys and explicit nulls.</summary>
     /// <param name="property">The property contract.</param>
     /// <param name="rootNamespace">The namespace qualifying enum initializers independently of field names.</param>
+    /// <param name="memberNames">All generated field names that can hide model or enum declarations.</param>
     /// <returns>The corresponding C++ field declaration.</returns>
-    private FieldDeclarationNode BuildField(IrProperty property, string rootNamespace)
+    private FieldDeclarationNode BuildField(IrProperty property, string rootNamespace, IReadOnlySet<string> memberNames)
     {
-        var mapped = StdPropertyTypes.MapField(property, _typeMapper);
+        var mapped = QualifyHiddenTypes(StdPropertyTypes.MapField(property, _typeMapper), rootNamespace, memberNames);
         var isOptional = StdPropertyTypes.IsOptional(property) || property.Type is IrNullableType;
         var defaultValueStr = isOptional ? null : _typeMapper.GetDefaultValue(property.Type);
         ExpressionNode? defaultValue = defaultValueStr != null
@@ -100,6 +103,25 @@ public sealed class StdModelAstBuilder : AstBuilderBase
             documentation: StdDocumentation.Create($"Value of the '{property.OriginalName}' property.", property.Description,
                 property.IsRequired ? "@details The wire property is required." : "@details An empty optional represents a missing wire property."));
     }
+
+    /// <summary>Qualifies declaration references that a field name would hide in the containing C++ class scope.</summary>
+    /// <remarks>Qualification also applies inside containers and to references before or after the colliding field.</remarks>
+    /// <param name="type">The mapped field type, including presence and nullability wrappers.</param>
+    /// <param name="rootNamespace">The namespace containing generated model and enum declarations.</param>
+    /// <param name="memberNames">The complete set of generated field names in this model.</param>
+    /// <returns>A field type whose declaration references have unambiguous C++ name lookup.</returns>
+    private static TypeNode QualifyHiddenTypes(TypeNode type, string rootNamespace, IReadOnlySet<string> memberNames)
+        => type switch
+        {
+            SimpleTypeNode simple when !simple.IsPrimitive && memberNames.Contains(simple.Name.Name)
+                => new SimpleTypeNode(new IdentifierNode(string.IsNullOrEmpty(rootNamespace)
+                        ? $"::{simple.Name.Name}" : $"::{rootNamespace}::{simple.Name.Name}"),
+                    simple.IsPrimitive, simple.IsNullable, simple.IsOptional, simple.LiteralValue, simple.Metadata),
+            GenericTypeNode generic => new GenericTypeNode(generic.Name,
+                generic.TypeArguments.Select(argument => QualifyHiddenTypes(argument, rootNamespace, memberNames)).ToArray(),
+                generic.IsNullable, generic.IsOptional, generic.Metadata),
+            _ => type,
+        };
 
     /// <summary>Initializes required enum fields deterministically while retaining an explicit schema wire default.</summary>
     /// <param name="property">The required enum property.</param>

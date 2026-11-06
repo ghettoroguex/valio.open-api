@@ -117,6 +117,11 @@ jobs:
     name: cpp compile fixture (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    env:
+      # CMakeDeps validates the configuration even with a single-config generator.
+      CMAKE_BUILD_TYPE: Debug
+      CMAKE_GENERATOR: ${{ matrix.os == 'windows-latest' && 'Visual Studio 17 2022' || 'Ninja' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
     strategy:
       fail-fast: false
       matrix:
@@ -133,6 +138,18 @@ jobs:
 
       - name: Restore
         run: dotnet restore tests/ValIO.Generators.Cpp.CompileTests/ValIO.Generators.Cpp.CompileTests.csproj
+
+      - name: Setup Python for native dependencies
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Conan
+        run: python -m pip install conan==2.34.0
+
+      - name: Provision pinned C++ dependencies
+        shell: pwsh
+        run: ./.github/scripts/setup-cpp-dependencies.ps1
 
       - name: Run compile fixture (C++17/20/23)
         run: >

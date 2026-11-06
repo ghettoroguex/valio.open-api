@@ -1,0 +1,22 @@
+name: Runner diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  diagnostics:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: [self-hosted, linux, x64, valio-deploy]
+    timeout-minutes: 5
+    steps:
+      - name: Verify deployment runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info --format '{{json .SecurityOptions}}' | grep -q 'name=rootless'
+          docker version --format 'Docker server {{.Server.Version}}'
+          docker compose version
+          test -w /deploy/valio-web
+          echo 'Rootless Docker, Compose and persistent deployment storage are available.' >> "$GITHUB_STEP_SUMMARY"

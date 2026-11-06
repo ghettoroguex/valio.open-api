@@ -18,6 +18,36 @@ namespace ValIO.Generators.Cpp.Tests.Builders.Std;
 [TestFixture]
 public sealed class StdEnumModelInitializationTests
 {
+    /// <summary>Checks member names cannot hide enum or model types in direct, optional, or nested field declarations.</summary>
+    [Test]
+    public void FieldsSharingDeclarationNames_QualifyEveryAffectedReference()
+    {
+        var (header, _) = Build([
+            Property("EarlierStates", "State") with
+            {
+                Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "State" } },
+            },
+            Property("State", "State") with { IsRequired = false },
+            Property("LaterState", "State"),
+            Property("EarlierChild", "Child"),
+            Property("Child", "Child"),
+            Property("LaterChildren", "Child") with
+            {
+                IsRequired = false,
+                Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "Child" } },
+            },
+        ]);
+
+        header.Should().Contain("std::vector<::Api::State> EarlierStates;");
+        header.Should().Contain("std::optional<::Api::State> State;");
+        header.Should().Contain("::Api::State LaterState = Api::State();");
+        header.Should().Contain("::Api::Child EarlierChild;");
+        header.Should().Contain("::Api::Child Child;");
+        header.Should().Contain("std::optional<std::vector<::Api::Child>> LaterChildren;");
+        header.Should().Contain("#include \"Enums/State.h\"");
+        header.Should().Contain("#include \"Models/Child.h\"");
+    }
+
     /// <summary>Checks required string and numeric enum references use structured value initialization.</summary>
     [Test]
     public void RequiredEnumWithoutSchemaDefault_IsValueInitializedWithTypedAst()
