@@ -10,8 +10,8 @@ schreibt das Ergebnis entweder als Verzeichnisbaum oder als ZIP-Archiv.
 
 ## Unterbefehle
 
-- [`valio generate`](./generate/) — Code aus einem OpenAPI-Schema generieren
-- [`valio validate`](./validate/) — ein Schema parsen und Metadaten ausgeben
+- [`valio generate`](/de/cli/generate/) — Code aus einem OpenAPI-Schema generieren
+- [`valio validate`](/de/cli/validate/) — ein Schema parsen und Metadaten ausgeben
 
 ## Globale Optionen
 

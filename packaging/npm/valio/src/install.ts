@@ -49,7 +49,7 @@ function main(): void {
   if (located.status === "package-missing") {
     warn(
       `optional dependency '${info.pkg}' was not installed. ` +
-        "Re-run 'npm install @valio-projects/valio' or pass --include=optional if you previously omitted optionals.",
+        "Re-run 'npm install @val.io/valio' or pass --include=optional if you previously omitted optionals.",
     );
     return;
   }

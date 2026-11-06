@@ -43,14 +43,14 @@ For repos that already manage their toolchain with npm (frontend
 monorepos, GitHub Actions jobs that set up Node anyway):
 
 ```bash
-npm install -g @valio-projects/valio
+npm install -g @val.io/valio
 # or as a dev dependency
-npm install --save-dev @valio-projects/valio
+npm install --save-dev @val.io/valio
 ```
 
-The npm wrapper downloads the matching .NET 10 self-contained binary
-for the current platform on first run and caches it under
-`~/.valio/`.
+The npm wrapper installs the matching platform package as an optional dependency.
+Each platform package contains a self-contained .NET 10 executable, so this
+installation does not require a system-wide .NET runtime.
 
 ## Via GitHub Releases
 
@@ -60,10 +60,9 @@ platform:
 
 | File                          | Platform                |
 |-------------------------------|-------------------------|
-| `valio-<ver>-win-x64.zip`     | Windows x64             |
-| `valio-<ver>-win-arm64.zip`   | Windows ARM64           |
-| `valio-<ver>-osx-x64.tar.gz`  | macOS Intel             |
-| `valio-<ver>-osx-arm64.tar.gz`| macOS Apple Silicon     |
+| `valio-<ver>-win32-x64.zip`   | Windows x64             |
+| `valio-<ver>-darwin-x64.tar.gz`  | macOS Intel          |
+| `valio-<ver>-darwin-arm64.tar.gz`| macOS Apple Silicon  |
 | `valio-<ver>-linux-x64.tar.gz`| Linux x64               |
 | `valio-<ver>-linux-arm64.tar.gz`| Linux ARM64           |
 
@@ -106,7 +105,7 @@ for progress.
   Releases. The first run shows *"valio cannot be opened"*. Open
   System Settings → Privacy & Security → click "Open Anyway".
   Releases will be notarized once Apple Developer setup lands.
-- Apple Silicon users: pick `osx-arm64`. Intel builds work under
+- Apple Silicon users: pick `darwin-arm64`. Intel builds work under
   Rosetta but are slower.
 
 ### Linux
@@ -119,7 +118,7 @@ for progress.
 - Make sure the .NET 10 runtime is installed (`apt`/`dnf`/`zypper`
   packages or Microsoft's tarball). The `dotnet-tool` path is
   framework-dependent.
-- For a fully static binary, prefer the GitHub Release tarball — it
+- For a self-contained binary, prefer the GitHub Release tarball — it
   bundles the .NET runtime so you don't need it system-wide.
 
 ## Verifying

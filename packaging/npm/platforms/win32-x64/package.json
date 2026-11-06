@@ -1,5 +1,5 @@
 {
-  "name": "@valio-projects/cli-win32-x64",
+  "name": "@val.io/cli-win32-x64",
   "version": "0.1.0",
   "description": "ValIO CLI binary for win32-x64.",
   "os": [

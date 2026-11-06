@@ -1,0 +1,34 @@
+name: valio-web
+
+services:
+  web:
+    image: ${VALIO_WEB_IMAGE:?Set VALIO_WEB_IMAGE to a tested GHCR image digest}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${VALIO_BIND_ADDRESS:-127.0.0.1}:${VALIO_WEB_PORT:-18080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ReverseProxy__KnownProxies__0: ${VALIO_TRUSTED_PROXY:-}
+      AllowedHosts: ${VALIO_ALLOWED_HOSTS:-*}
+    volumes:
+      - data-protection:/home/app/.aspnet/DataProtection-Keys
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: ${VALIO_WEB_CPUS:-2}
+    mem_limit: ${VALIO_WEB_MEMORY:-1g}
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data-protection:

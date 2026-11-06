@@ -91,7 +91,6 @@ jobs:
           --filter "Category!=CompileFixture"
           --logger trx
           --logger "console;verbosity=minimal"
-          --collect:"XPlat Code Coverage"
 
       - name: Summarise test results
         if: always()
@@ -104,7 +103,6 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: |
             **/TestResults/*.trx
-            **/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 14
 
@@ -180,6 +178,9 @@ jobs:
       - name: List packages
         run: ls -lh nupkgs
 
+      - name: Install and smoke test the NuGet tool
+        run: bash .github/scripts/smoke-nuget.sh nupkgs 0.0.0-ci.${{ github.run_number }}
+
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
@@ -229,6 +230,19 @@ jobs:
           chmod +x publish/linux-x64/valio
           ./publish/linux-x64/valio --help
 
+      - name: Setup Node.js for packaged CLI smoke test
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install and build npm wrapper
+        run: |
+          npm ci --ignore-scripts --prefix packaging/npm
+          npm run build --prefix packaging/npm
+
+      - name: Install npm tarballs and invoke the native CLI
+        run: node .github/scripts/smoke-npm.mjs publish/linux-x64/valio
+
   # ---------------------------------------------------------------------------
   # Type-check and build the npm wrapper that resolves and spawns the binary.
   # ---------------------------------------------------------------------------
@@ -238,7 +252,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: packaging/npm/valio
+        working-directory: packaging/npm
 
     steps:
       - name: Checkout
@@ -249,18 +263,22 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: packaging/npm/valio/package-lock.json
+          cache-dependency-path: packaging/npm/package-lock.json
 
-      # --ignore-scripts: the postinstall chmods a platform binary that does not
-      # exist in a source checkout.
+      # Build tools are independent of the unpublished native packages, so a
+      # clean checkout can build the wrapper before the first registry release.
       - name: Install
         run: npm ci --ignore-scripts
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run check
 
       - name: Build
         run: npm run build
+
+      - name: Validate release channel and package contracts
+        working-directory: .
+        run: node --test .github/scripts/release-scripts.test.mjs
 
   # ---------------------------------------------------------------------------
   # Build the Starlight docs site. Link validation runs as part of the Astro

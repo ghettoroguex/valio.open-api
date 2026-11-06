@@ -1,0 +1,45 @@
+name: valio-runner
+
+services:
+  runner:
+    platform: linux/amd64
+    build:
+      context: .
+    image: valio-github-runner:2.338.2
+    # UID 0 maps to the unprivileged host account in a rootless daemon. It lets
+    # this container access that account's socket without exposing host root.
+    user: "0:0"
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 2m
+    environment:
+      RUNNER_URL: https://github.com/valio-projects/valio.open-api
+      RUNNER_NAME: ${VALIO_RUNNER_NAME:-valio-deploy-77-91-74-209}
+      DOCKER_HOST: unix:///run/valio-docker.sock
+      VALIO_WEB_DEPLOY_PATH: /deploy/valio-web
+    volumes:
+      - runner-state:/runner-state
+      - runner-work:/home/runner/_work
+      - web-deployment:/deploy/valio-web
+      - type: bind
+        source: ${VALIO_DOCKER_SOCKET:?Set VALIO_DOCKER_SOCKET to the dedicated account's rootless Docker socket}
+        target: /run/valio-docker.sock
+        bind:
+          create_host_path: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1
+    mem_limit: 1g
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  runner-state:
+  runner-work:
+  web-deployment:

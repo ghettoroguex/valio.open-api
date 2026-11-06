@@ -1,5 +1,5 @@
 {
-  "name": "@valio-projects/cli-linux-x64",
+  "name": "@val.io/cli-linux-x64",
   "version": "0.1.0",
   "description": "ValIO CLI binary for linux-x64.",
   "os": [

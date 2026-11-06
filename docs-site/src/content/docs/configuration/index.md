@@ -123,11 +123,11 @@ defined by `ProjectConfig` in `src/ValIO.Configuration/Models/ProjectConfig.cs`.
 | `generateModels`   | bool    | `true`  | Emit DTOs/enums.                                                                                                                                         |
 | `generateClients`  | bool    | `true`  | Emit HTTP client classes/functions.                                                                                                                      |
 | `namespace`        | string? | `null`  | Namespace/package/module prefix. Used by `csharp`, `java`, `kotlin`, `php`, `fsharp`, sometimes `swift`. Ignored by other languages.                     |
-| `options`          | object  | `{}`    | Per-plugin options. See the [Options reference](./options-reference/) for every key by language.                                                         |
-| `fileOrganization` | object  | plugin defaults | Controls how generated files are laid out. See [File organization](./file-organization/).                                                            |
-| `namingConvention` | object  | plugin defaults | Per-identifier-kind casing rules. See [Naming conventions](./naming-conventions/).                                                                   |
+| `options`          | object  | `{}`    | Per-plugin options. See the [Options reference](/configuration/options-reference/) for every key by language.                                                         |
+| `fileOrganization` | object  | plugin defaults | Controls how generated files are laid out. See [File organization](/configuration/file-organization/).                                                            |
+| `namingConvention` | object  | plugin defaults | Per-identifier-kind casing rules. See [Naming conventions](/configuration/naming-conventions/).                                                                   |
 
-See [Projects](./projects/) for a deep dive into each key with examples.
+See [Projects](/configuration/projects/) for a deep dive into each key with examples.
 
 ## Lookup order
 
@@ -195,11 +195,11 @@ name, the offending field, and the reason — then exits with code `1`.
 
 ## See also
 
-- [Projects](./projects/) — full reference for every project key.
-- [Options reference](./options-reference/) — per-plugin options table.
-- [File organization](./file-organization/) — folder layout rules.
-- [Naming conventions](./naming-conventions/) — identifier casing.
-- [YAML configuration](./yaml/) — the same shape in YAML, with anchors.
-- [Environment variables](./env-vars/) — overrides via `VALIO_*` vars.
-- [Examples](./examples/web-and-server/) — runnable configs.
+- [Projects](/configuration/projects/) — full reference for every project key.
+- [Options reference](/configuration/options-reference/) — per-plugin options table.
+- [File organization](/configuration/file-organization/) — folder layout rules.
+- [Naming conventions](/configuration/naming-conventions/) — identifier casing.
+- [YAML configuration](/configuration/yaml/) — the same shape in YAML, with anchors.
+- [Environment variables](/configuration/env-vars/) — overrides via `VALIO_*` vars.
+- [Examples](/configuration/examples/web-and-server/) — runnable configs.
 - [Plugin IDs](/reference/plugin-ids/) — exhaustive list of `language` values.

@@ -1,5 +1,5 @@
 {
-  "name": "@valio-projects/cli-darwin-arm64",
+  "name": "@val.io/cli-darwin-arm64",
   "version": "0.1.0",
   "description": "ValIO CLI binary for darwin-arm64.",
   "os": [

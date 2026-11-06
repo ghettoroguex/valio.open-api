@@ -10,7 +10,7 @@ Transports für bestehende Plugins, Fehlerbehebungen und Übersetzungen.
 ## Lokales Setup
 
 ```bash
-git clone https://github.com/your-org/valio
+git clone https://github.com/valio-projects/valio.open-api
 cd valio
 dotnet build ValIO.sln
 dotnet test  ValIO.sln

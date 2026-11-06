@@ -1,215 +1,167 @@
 # CI/CD
 
-ValIO builds and publishes on GitHub Actions. Everything is branch-driven: there
-is no manual release job, and no tag has to be pushed by hand.
+ValIO uses GitHub Actions to validate source changes, publish installable packages,
+build the web application, and deploy documentation.
 
-## Workflows
+## Workflows and versions
 
-| Workflow                                            | Trigger                                        | Purpose                                               |
-| --------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| [`ci.yml`](../.github/workflows/ci.yml)             | PRs, pushes to ordinary branches, `workflow_call` | Build, test, pack-check, CLI smoke test, npm shim, docs |
-| [`release.yml`](../.github/workflows/release.yml)   | Pushes to `main`, `develop`, `release/**`      | Calls CI, then versions, packs and publishes           |
-| [`docs.yml`](../.github/workflows/docs.yml)         | Pushes to `main` touching `docs-site/`         | Deploys the Starlight site to GitHub Pages            |
-| [`codeql.yml`](../.github/workflows/codeql.yml)     | PRs, pushes to release branches, weekly        | CodeQL analysis for C# and TypeScript                 |
+| Workflow | Trigger | Result |
+| --- | --- | --- |
+| [CI](../.github/workflows/ci.yml) | PRs, ordinary branch pushes, reusable call | .NET build/tests on Linux, Windows and macOS; NuGet and native npm installation smoke; documentation build |
+| [Release](../.github/workflows/release.yml) | `main`, `develop`, `release/**`, manual dispatch | Runs CI before publishing packages and the web image |
+| [Web](../.github/workflows/web.yml) | Relevant PRs/ordinary branches; Release call | Builds a non-root image, tests HTTP generation, publishes from `main` |
+| [Docs](../.github/workflows/docs.yml) | Documentation changes on `main`, manual dispatch on `main` | Deploys GitHub Pages |
+| [CodeQL](../.github/workflows/codeql.yml) | PRs, release branches, schedule | C# and TypeScript analysis |
 
-`release.yml` invokes `ci.yml` through `workflow_call` rather than duplicating
-it, so nothing is ever published from code that has not compiled and passed the
-test suite on Linux, Windows and macOS. `ci.yml` deliberately excludes
-`main` / `develop` / `release/**` from its own `push` trigger to avoid running
-twice on those refs.
+Release invokes CI for publishing branches, avoiding duplicate matrices on push.
+Legacy `master` and feature branches validate without publishing.
 
-## Pipeline
+The root [VERSION](../VERSION) contains `X.Y.Z`. MSBuild uses it locally;
+[compute-version.mjs](../.github/scripts/compute-version.mjs) adds preview suffixes.
 
+| Branch | Version | NuGet destination | npm package/registry | Tag |
+| --- | --- | --- | --- | --- |
+| `main` | `X.Y.Z` | nuget.org | `@val.io/valio`, npmjs.com | `latest` |
+| `release/**` | `X.Y.Z-rc.<run>` | GitHub Packages | `@valio-projects/valio`, GitHub Packages | `next` |
+| `develop` | `X.Y.Z-alpha.<run>` | GitHub Packages | `@valio-projects/valio`, GitHub Packages | `dev` |
+| Other branches/PRs | CI/PR suffix | No publication | No publication | — |
+
+Version-shaped release branch names select the RC base (`release/1.4` becomes
+`1.4.0-rc.<run>`). Preview numbers use the workflow run number.
+
+To release, merge tested changes into `main` with a new `VERSION`. The first
+release can use the existing unpublished version. Registry versions are immutable:
+existing versions are skipped, so changing code without bumping `VERSION` does
+not update installed CLI packages. Web images use commit tags and digests and
+publish independently of the CLI version. GitHub Release assets carry five native
+archives and the .NET tool package.
+
+## npm distribution and installation
+
+The public wrapper is `@val.io/valio`. Its five exact-version optional dependencies
+are `@val.io/cli-{win32-x64,linux-x64,linux-arm64,darwin-x64,darwin-arm64}`.
+GitHub previews use `@valio-projects` because GitHub Packages requires its owner
+as the scope. The launcher discovers its platform package from its own manifest.
+
+Native packages publish before the wrapper. Each contains a self-contained,
+single-file executable; consumers need Node.js and supported system libraries,
+but do not need to install .NET. Alpine/musl and Windows ARM64 are not included.
+
+Private build tools and the lockfile live in `packaging/npm`, separate from the
+wrapper, so a fresh checkout builds before native packages exist in a registry.
+
+```sh
+npm ci --ignore-scripts --prefix packaging/npm
+npm run check --prefix packaging/npm
+npm run build --prefix packaging/npm
+node --test .github/scripts/release-scripts.test.mjs
 ```
-                 ┌──────────────────────────────────────────┐
-push ───────────▶│ ci  (build & test ×3 OS, pack, smoke,    │
-                 │      npm shim, docs site)                │
-                 └────────────────────┬─────────────────────┘
-                                      │
-      version ────────────────────────┼──────────────┐
-                                      ▼              ▼
-                                    pack          binaries ×5
-                                      │              │
-                                      ▼              ▼
-                              publish-nuget   publish-npm
-                                      └──────┬───────┘
-                                             ▼
-                                     github-release  (main only)
+
+Stable installation:
+
+```sh
+npm install --global @val.io/valio
+dotnet tool install --global ValIO.Cli
+valio --help
 ```
 
-## Channels
+The .NET tool targets .NET 10. Projects embedding generators can use
+`dotnet add package ValIO.Generators.TypeScript` or another published library.
 
-The version and its destination are derived entirely from the branch by
-[`compute-version.mjs`](../.github/scripts/compute-version.mjs).
+Previews require separate GitHub Packages read credentials:
 
-| Branch       | Version                 | NuGet           | npm             | dist-tag |
-| ------------ | ----------------------- | --------------- | --------------- | -------- |
-| `main`       | `X.Y.Z` from `VERSION`  | nuget.org       | npmjs.com       | `latest` |
-| `release/**` | `X.Y.Z-rc.<run>`        | GitHub Packages | GitHub Packages | `next`   |
-| `develop`    | `X.Y.Z-alpha.<run>`     | GitHub Packages | GitHub Packages | `dev`    |
-| PRs, others  | `X.Y.Z-pr.N.<run>` etc. | not published   | not published   | —        |
-
-A legacy `master` branch is built and tested like any other branch but never
-publishes, so pushing it cannot trigger a release by accident.
-
-`<run>` is `github.run_number`, which is monotonic per workflow. Every preview
-upload is therefore a fresh, ordered version that can never collide with an
-existing one.
-
-For `release/**` the branch suffix wins when it parses as a version
-(`release/1.4`, `release/v2.0.1` → base `1.4.0` / `2.0.1`), which lets a release
-branch stabilise a version independently of what `main` currently carries.
-Anything else (`release/2026-q1`) falls back to the `VERSION` file.
-
-### Versioning source of truth
-
-The repo-root [`VERSION`](../VERSION) file holds a plain `X.Y.Z` — no prerelease
-suffix. `Directory.Build.props` reads it into `VersionPrefix`, so a local
-`dotnet pack` produces the same number the pipeline would, and CI overrides it
-with `-p:Version=…` to append the channel suffix.
-
-**Cutting a stable release means bumping `VERSION`.** Publishing from `main` is
-idempotent: `dotnet nuget push --skip-duplicate` and an `npm view` existence
-check mean a push to `main` that does not change `VERSION` republishes nothing
-and stays green. Re-running a workflow is always safe.
-
-## npm package naming
-
-The CLI ships as a thin wrapper plus five per-platform packages carrying one
-prebuilt binary each:
-
-| Package                            | Contents                              |
-| ---------------------------------- | ------------------------------------- |
-| `@valio-projects/valio`            | Wrapper; installs the `valio` command |
-| `@valio-projects/cli-<platform>`   | One prebuilt binary, `os`/`cpu`-gated |
-
-The names are the same on both channels — only the registry differs. The scope
-must equal the repository owner because GitHub Packages requires it, and using
-the same scope on npmjs.com keeps a package's identity stable no matter where it
-was published from. (The bare name `valio` is not available on npmjs.com; it is
-taken by an unrelated project.)
-
-[`prepare-npm.mjs`](../.github/scripts/prepare-npm.mjs) stamps versions,
-registry and licence into the manifests at publish time. The wrapper does not
-hardcode the scope — it discovers the platform package name at runtime from its
-own `optionalDependencies`
-(see [`platform.ts`](../packaging/npm/valio/src/platform.ts)), so renaming the
-scope needs no source change.
-
-Platform packages are published before the wrapper, because the wrapper pins
-exact versions of them.
-
-### Consuming
-
-```bash
-# npmjs.com — stable
-npm install -g @valio-projects/valio
-
-# GitHub Packages — previews
+```sh
 npm config set @valio-projects:registry https://npm.pkg.github.com
-npm install -g @valio-projects/valio@dev    # develop
-npm install -g @valio-projects/valio@next   # release/**
+npm install --global @valio-projects/valio@dev
+dotnet nuget add source https://nuget.pkg.github.com/valio-projects/index.json --name valio-preview
 ```
 
-Both registries host the same package name, so switching channels means pointing
-the scope at a different registry, not installing a differently named package.
+Never commit registry access tokens or include them in installation examples.
 
-```bash
-dotnet nuget add source https://nuget.pkg.github.com/valio-projects/index.json \
-  --name valio-preview --username <you> --password <a PAT with read:packages>
-```
+## Publishing credentials
 
-Reading from GitHub Packages requires authentication even for public
-repositories — that is a GitHub limitation, not a ValIO one.
+| Setting | Purpose |
+| --- | --- |
+| Variable or secret `NUGET_USER` | Personal NuGet username that created the trusted policy; currently `sentike161` |
+| `NUGET_API_KEY` secret | Optional fallback when NuGet Trusted Publishing is unavailable |
+| `NPM_TOKEN` secret | Temporary bootstrap for the first six public npm packages |
+| `GITHUB_TOKEN` | Automatic credential for GitHub Packages, GHCR, tags and releases |
 
-## Credentials
+Jobs request their minimum permissions. Repository-wide token defaults can remain
+read-only. Stable publishing uses environment `production`; previews use `preview`.
 
-| Name             | Needed for                        | Notes                                     |
-| ---------------- | --------------------------------- | ----------------------------------------- |
-| `NUGET_USER`     | Trusted Publishing to nuget.org   | nuget.org **profile name**, not an email  |
-| `NUGET_API_KEY`  | Fallback if Trusted Publishing is unavailable | Long-lived; rotate annually   |
-| `NPM_TOKEN`      | Stable npm pushes to npmjs.com    | Automation token with publish rights      |
-| `GITHUB_TOKEN`   | All GitHub Packages pushes, tags  | Provided automatically; no setup required |
+### NuGet Trusted Publishing
 
-Preview channels need nothing configured — they authenticate with the workflow's
-own token. Both publish jobs validate credentials before uploading anything, so
-a missing one fails fast with an explicit message instead of a mid-publish `401`.
+In the personal NuGet account, configure a policy owned by `valio-projects`:
 
-The publish jobs run in the `production` (stable) and `preview` (prerelease)
-environments, so approval gates or environment-scoped secrets can be added later
-without touching the workflow.
+- GitHub owner `valio-projects`, repository `valio.open-api`.
+- Workflow filename `release.yml`, environment `production`.
+- Push new packages and versions, pattern `ValIO.*`.
 
-### Trusted Publishing (nuget.org)
+Set `NUGET_USER` to the personal username, not the organization or an email.
+`NuGet/login` exchanges OIDC for a short-lived push key immediately before upload.
+A policy pointing to `ci.yml` does not authorize `release.yml`.
+See [NuGet setup](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing).
 
-Preferred over `NUGET_API_KEY`: the workflow mints a GitHub OIDC token, nuget.org
-verifies it against a policy you register and returns an API key valid for **one
-hour**. Nothing long-lived is stored in the repository, and there is no key to
-rotate or leak.
+### npm Trusted Publishing
 
-Set it up once:
+npm needs an existing package before its trusted publisher can be configured.
+Bootstrap all six with a short-lived granular token restricted to `@val.io`,
+provided as `NPM_TOKEN`. Then configure **each** package:
 
-1. Sign in to nuget.org → your username → **Trusted Publishing** → add a policy.
-   If the menu entry is missing, the feature has not reached your account yet —
-   keep using `NUGET_API_KEY` until it does.
-2. Fill in (case-insensitive):
-   - **Repository Owner:** `valio-projects`
-   - **Repository:** `valio.open-api`
-   - **Workflow File:** `release.yml` — file name only, no `.github/workflows/`
-   - **Environment:** `production` — this is the environment the `publish-nuget`
-     job uses for stable releases, so the policy cannot be exercised by a
-     preview build
-3. Choose the policy **owner** — the user or organisation that owns the packages.
-   The policy covers every package owned by that owner.
-4. Add a repository secret `NUGET_USER` with your nuget.org profile name.
+- Provider GitHub Actions.
+- Owner `valio-projects`, repository `valio.open-api`.
+- Workflow filename `release.yml`, environment `production`.
 
-Two behaviours worth knowing:
+The publish job uses GitHub-hosted runners, Node.js 24, npm 11 and
+`id-token: write`. npm does not support self-hosted trusted publishers.
+After a successful token-free release, revoke the bootstrap token and remove
+`NPM_TOKEN` from GitHub. See [npm setup](https://docs.npmjs.com/trusted-publishers/).
 
-- A new policy may start **temporarily active for 7 days**. nuget.org needs the
-  GitHub repository and owner IDs — which only arrive with the first successful
-  publish — to pin the policy and block resurrection attacks. Publish once inside
-  that window and it becomes permanent; the window can be restarted at any time.
-- A policy owned by an organisation goes inactive if its creator leaves that
-  organisation, and becomes active again when they are added back.
+## Documentation
 
-The workflow picks its credential in this order: the Trusted Publishing key, then
-`NUGET_API_KEY` (with a warning), then it fails. So you can add Trusted
-Publishing without removing the old secret, confirm a green run, and delete the
-secret afterwards.
+Enable Settings → Pages → Source **GitHub Actions**. The Docs workflow reads the
+actual Pages URL as `DOCS_SITE_URL`. The default deployment is
+<https://valio-projects.github.io/valio.open-api/>. Builds validate all internal
+links and generated HTML, including the project path prefix.
 
-Trusted Publishing covers nuget.org only. npm has an equivalent, but it does not
-apply here because the stable npm packages are scoped and the preview channels
-already run keyless on `GITHUB_TOKEN`.
+A future custom domain can be configured in Pages and DNS; the workflow derives
+the new URL automatically. See [docs-site](../docs-site/README.md).
 
-## First-time repository setup
+## Web image and optional hosting
 
-One-off steps that live in GitHub's UI rather than in this repository:
+The image is `ghcr.io/valio-projects/valio-web:latest`, with a source commit tag.
+Publishing follows Release CI and an HTTP smoke that validates a schema and
+generates a ZIP. New GHCR packages can initially be private; verify visibility
+before promising anonymous pulls.
 
-1. **nuget.org credentials** — set up Trusted Publishing and add the `NUGET_USER`
-   secret (see above), or fall back to a `NUGET_API_KEY` secret. Plus `NPM_TOKEN`
-   under Settings → Secrets and variables → Actions. Only needed before the first
-   push to `main`; preview channels work without any of them.
-2. **Workflow permissions** — Settings → Actions → General → Workflow
-   permissions must allow read *and* write, otherwise `github-release` cannot
-   push the `vX.Y.Z` tag and the publish jobs cannot write to GitHub Packages.
-3. **Pages** — Settings → Pages → Source: *GitHub Actions*, so `docs.yml` can
-   deploy.
-4. **npm organisation** — the `valio-projects` scope must exist on npmjs.com and
-   the account behind `NPM_TOKEN` must be able to publish to it.
-5. **Branch protection** (optional) — require the CI checks on `main` and
-   `develop`.
+Deployment stays off unless `VALIO_WEB_DEPLOY_ENABLED=true`. Building/publishing
+needs no domain or SSH credentials. Optional deployment uses a self-hosted
+`valio-deploy` runner, an immutable image digest, Compose health checks and
+rollback. See [deploy/web](../deploy/web/README.md).
 
-## Local equivalents
+[deploy/runner](../deploy/runner/README.md) provides a bounded Compose runner for a
+dedicated rootless Docker account. Files alone do not install or register it.
+Keep public PR jobs on GitHub-hosted runners; avoid the server's rootful socket.
 
-```bash
+## Release verification
+
+Check the Actions run and resulting registries, not just a local build:
+
+1. All required CI and web smoke jobs pass.
+2. All 17 NuGet packages and six public npm packages have the expected version.
+3. Clean public-registry installations launch `valio --help`.
+4. GitHub Release contains the native archives and tool package.
+5. Pages home, translated pages and static assets return successfully.
+6. GHCR image pulls and passes `/healthz`; active hosting remains a separate opt-in.
+
+Local equivalents:
+
+```sh
 dotnet build ValIO.sln -c Release
-dotnet test ValIO.sln -c Release --no-build
+dotnet test ValIO.sln -c Release --filter "Category!=CompileFixture"
 dotnet pack ValIO.sln -c Release -o nupkgs
-node .github/scripts/compute-version.mjs   # print what this ref would publish
 ```
 
-`compute-version.mjs` reads `GITHUB_REF_NAME`, `GITHUB_EVENT_NAME` and
-`GITHUB_RUN_NUMBER`, so the channel rules can be checked locally:
-
-```bash
-GITHUB_REF_NAME=release/1.4 GITHUB_RUN_NUMBER=7 node .github/scripts/compute-version.mjs
-```
+C++ compile fixtures require native toolchains and run separately in CI. Some
+runtime integration cases are opt-in or skip when external tools are absent.

@@ -1,19 +1,3 @@
-> ## ⚠️ Deviation branch — `feature/cubemap_generator_mpv1`
->
-> This branch is a **local deviation** maintained for **Andrey Kharlanchev**'s setup of the
-> **CubemapGeneratorMVP1** Unreal Engine project. It is **not** the canonical upstream and is
-> not intended for general consumption.
->
-> It is paired with the matching deviation branch of the ValIO Unreal Engine plugin
-> (`ValIO.Plugin`, branch `feature/cubemap_generator_mpv1`). The two are **related and meant to
-> be used together**: this generator emits the C++/Unreal code that the plugin consumes, and both
-> are pinned as submodules of the CubemapGeneratorMVP1 project. Changing one without the other
-> will break that local setup.
->
-> If you are looking for upstream ValIO, use the `master` branch.
-
----
-
 # ValIO
 
 > ValIO — type-safe HTTP clients, models, and validation schemas for 12 languages, generated from any OpenAPI 3.x schema.
@@ -21,9 +5,9 @@
 [![CI](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml)
 [![Release](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml)
 [![NuGet](https://img.shields.io/nuget/v/ValIO.Cli.svg)](https://www.nuget.org/packages/ValIO.Cli)
-[![npm](https://img.shields.io/npm/v/@valio-projects/valio.svg)](https://www.npmjs.com/package/@valio-projects/valio)
+[![npm](https://img.shields.io/npm/v/@val.io/valio.svg)](https://www.npmjs.com/package/@val.io/valio)
 [![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL_v2.1-blue.svg)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-valio.dev-blue)](https://valio.dev)
+[![Docs](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://valio-projects.github.io/valio.open-api/)
 
 ## Quick start
 
@@ -37,7 +21,7 @@ valio generate -s ./openapi.yaml -o ./out -l typescript
 Install via npm:
 
 ```bash
-npm install -g @valio-projects/valio
+npm install -g @val.io/valio
 valio generate -s ./openapi.yaml -o ./out -l typescript
 ```
 
@@ -155,7 +139,12 @@ ValIO.sln
 
 ## Documentation
 
-Full documentation lives at <https://valio.dev>.
+Full documentation lives at <https://valio-projects.github.io/valio.open-api/>.
+
+Stable releases from `main` publish the .NET tool and libraries to NuGet, the
+CLI to npm, and the web image to `ghcr.io/valio-projects/valio-web`. See
+[CI/CD](docs/CI_CD.md) for release setup and
+[web deployment](deploy/web/README.md) for the optional Docker Compose host.
 
 To run the docs locally:
 

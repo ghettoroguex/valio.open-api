@@ -34,11 +34,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
- * Repository owner. Doubles as the npm scope on both registries: GitHub
- * Packages *requires* the scope to equal the owner, and the public packages use
- * the same scope so a package's name never changes between channels — only the
- * registry it lives in does. (The bare name `valio` is unavailable on npmjs.com,
- * taken by an unrelated project.)
+ * Repository owner. GitHub Packages requires its npm scope to match this owner.
  */
 const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "valio-projects";
 
@@ -50,11 +46,11 @@ const PUBLIC_NPM = "https://registry.npmjs.org";
 const GH_NUGET = `https://nuget.pkg.github.com/${OWNER}/index.json`;
 const GH_NPM = "https://npm.pkg.github.com";
 
-/** npm scope shared by both channels. */
-const NPM_SCOPE = `@${OWNER}`;
+/** Public npm organization; independent of the GitHub repository owner. */
+const PUBLIC_NPM_SCOPE = "@val.io";
 
-/** Name of the CLI wrapper package. The installed command is still `valio`. */
-const NPM_MAIN_NAME = `${NPM_SCOPE}/valio`;
+/** npm scope required by GitHub Packages for preview releases. */
+const GH_NPM_SCOPE = `@${OWNER}`;
 
 /**
  * Reads and validates the repo-root VERSION file.
@@ -134,7 +130,7 @@ function resolve_(env, base) {
     };
   }
 
-  if (refName === "main" || refName === "master") {
+  if (refName === "main") {
     return {
       version: base,
       channel: "stable",
@@ -188,8 +184,8 @@ function resolve_(env, base) {
  *   npmMainName: string}} Endpoint and naming details for the channel.
  */
 function registryDetails(registry) {
-  // Package names are identical on both channels; only the endpoints differ.
-  const naming = { npmScope: NPM_SCOPE, npmMainName: NPM_MAIN_NAME };
+  const npmScope = registry === "github" ? GH_NPM_SCOPE : PUBLIC_NPM_SCOPE;
+  const naming = { npmScope, npmMainName: `${npmScope}/valio` };
 
   if (registry === "public") {
     return { ...naming, nugetSource: PUBLIC_NUGET, npmRegistry: PUBLIC_NPM };

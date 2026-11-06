@@ -10,12 +10,12 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/check-build.mjs",
     "preview": "astro preview",
     "astro": "astro",
     "clean": "rimraf dist .astro node_modules/.cache",
     "lint:md": "markdownlint-cli2 \"src/content/**/*.{md,mdx}\"",
-    "lint:links": "astro build",
+    "lint:links": "npm run build",
     "format": "prettier --write \"src/**/*.{md,mdx,ts,astro}\" \"*.{mjs,json}\"",
     "format:check": "prettier --check \"src/**/*.{md,mdx,ts,astro}\" \"*.{mjs,json}\"",
     "i18n:report": "node scripts/check-translations.mjs"
