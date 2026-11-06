@@ -254,8 +254,8 @@ jobs:
 
       # Trusted Publishing: exchange the workflow's OIDC token for an API key
       # that expires in an hour, so no long-lived nuget.org key has to exist as
-      # a repository secret. Runs immediately before the push because the key is
-      # short-lived and single-use.
+      # a repository secret. The OIDC token is exchanged once; the resulting
+      # temporary API key can publish this batch during its one-hour lifetime.
       #
       # Requires a policy at https://www.nuget.org/account/trustedpublishing
       # matching this repository, `release.yml`, and the `production`
