@@ -1135,8 +1135,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
     
     /// <summary>
-    /// Рендерит значение по умолчанию для JSDoc
+    /// Renders a default or example as a JSON-compatible JSDoc value.
     /// </summary>
+    /// <param name="value">The IR value to render.</param>
+    /// <returns>The JSON-compatible representation.</returns>
     private string RenderDefaultValue(object? value)
     {
         if (value == null)
@@ -1144,6 +1146,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         
         return value switch
         {
+            System.Text.Json.JsonElement element => element.GetRawText(),
+            System.Text.Json.Nodes.JsonNode node => node.ToJsonString(),
             string str => $"\"{str.Replace("\"", "\\\"")}\"",
             bool b => b ? "true" : "false",
             int or long or short or byte => value.ToString() ?? "0",

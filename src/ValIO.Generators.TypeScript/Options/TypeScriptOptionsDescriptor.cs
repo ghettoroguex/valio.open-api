@@ -71,10 +71,19 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         new("Responses", "Responses",         "ts.resultTypeSuffix.responses.desc"),
     ];
 
+    /// <inheritdoc />
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
         var opts = new TypeScriptGenerationOptions();
+
+        if (rawOptions.TryGetValue("generateDefaultValues", out var defaults))
+        {
+            if (defaults.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                opts.GenerateDefaultValues = defaults.GetBoolean();
+            else
+                errorList.Add("Option 'generateDefaultValues' must be a boolean");
+        }
 
         if (rawOptions.TryGetValue("transports", out var transports))
         {
@@ -178,8 +187,11 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         return errors.AsReadOnly();
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
+        new(Name: "generateDefaultValues", Description: "Export explicitly specified non-null OpenAPI default values.",
+            DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Models"),
         new(
             Name:           "transports",
             Description:    "HTTP transport library to generate clients for. At least one is required.",
