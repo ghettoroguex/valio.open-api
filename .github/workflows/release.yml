@@ -285,9 +285,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # GitHub Packages rejects .snupkg symbol packages; nuget.org accepts
-          # them and picks them up automatically alongside each .nupkg.
-          extra=()
+          # Debug symbols and sources are embedded in the assemblies. Never
+          # auto-push a separate symbol package, including on a retry that
+          # downloaded artifacts from before this packaging setting changed.
           if [ "${REGISTRY}" = "public" ]; then
             if [ -n "${OIDC_KEY}" ]; then
               echo "Authenticating with a Trusted Publishing key (expires in 1 hour)."
@@ -301,7 +301,6 @@ jobs:
             fi
           else
             API_KEY="${PACKAGES_TOKEN}"
-            extra+=(--no-symbols)
             dotnet nuget add source "$SOURCE" --name valio-github \
               --username "$GITHUB_ACTOR" --password "$PACKAGES_TOKEN" \
               --store-password-in-clear-text
@@ -323,7 +322,7 @@ jobs:
               --api-key "${API_KEY}" \
               --source "${SOURCE}" \
               --skip-duplicate \
-              "${extra[@]}"
+              --no-symbols
             echo "::endgroup::"
           done
 
@@ -537,8 +536,8 @@ jobs:
             fi
           done
           # Only the CLI tool package is attached. The generator libraries are
-          # already on nuget.org, and attaching all ~17 of them plus their
-          # symbol packages would bury the binaries users actually come for.
+          # already on nuget.org; attaching every library would bury the
+          # platform binaries users actually come for.
           cp nupkgs/ValIO.Cli.*.nupkg release-assets/
           ls -lh release-assets
 

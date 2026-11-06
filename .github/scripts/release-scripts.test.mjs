@@ -38,6 +38,23 @@ function compute(cwd, ref, event = "push") {
   }));
 }
 
+test("TRX summary counts NUnit skipped outcomes even when its counter is zero", t => {
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, "nunit.trx"), `<?xml version="1.0"?>
+<TestRun><Results>
+  <UnitTestResult testName="Passed" outcome="Passed" />
+  <UnitTestResult testName="Skipped" outcome="NotExecuted" />
+  <UnitTestResult testName="Inconclusive" outcome="Inconclusive" />
+</Results><ResultSummary>
+  <Counters total="3" executed="1" passed="1" failed="0" notExecuted="0" inconclusive="0" />
+</ResultSummary></TestRun>`);
+  const result = spawnSync(process.execPath, [join(root, ".github/scripts/summarize-trx.mjs")], {
+    cwd, encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\*\*3\*\* total · \*\*1\*\* passed · \*\*0\*\* failed · \*\*2\*\* skipped/);
+});
+
 test("only main publishes stable packages to the public organizations", t => {
   const cwd = fixture(t);
   const stable = compute(cwd, "main");
