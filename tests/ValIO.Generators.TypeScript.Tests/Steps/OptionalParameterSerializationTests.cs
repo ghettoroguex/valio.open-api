@@ -12,12 +12,12 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
-/// <summary>Exercises optional manual IR parameter serialization through generated clients.</summary>
+/// <summary>Проверяет сериализацию вручную заданных необязательных параметров IR сгенерированными клиентами.</summary>
 [TestFixture]
 public sealed class OptionalParameterSerializationTests
 {
-    /// <summary>Checks that optional values are omitted only when undefined, including in required groups.</summary>
-    /// <returns>A task that completes when both generated clients have been executed.</returns>
+    /// <summary>Проверяет, что необязательные значения пропускаются только при undefined, в том числе в обязательных группах.</summary>
+    /// <returns>Задача, завершающаяся после выполнения обоих сгенерированных клиентов.</returns>
     [Test]
     public async Task OptionalTypesPreservePresentValuesInQueryAndHeaders()
     {
@@ -77,8 +77,8 @@ public sealed class OptionalParameterSerializationTests
         }
     }
 
-    /// <summary>Creates required and optional parameter types in the same group.</summary>
-    /// <returns>The query or header parameter declarations.</returns>
+    /// <summary>Создаёт обязательные и необязательные типы параметров в одной группе.</summary>
+    /// <returns>Объявления параметров запроса или заголовка.</returns>
     private static IReadOnlyList<IrParameter> Parameters() =>
     [
         Parameter("anchor", "Anchor", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String }),
@@ -88,17 +88,17 @@ public sealed class OptionalParameterSerializationTests
         Parameter("nullable", "Nullable", new IrNullableType { InnerType = Optional(IrPrimitiveKind.String) }),
     ];
 
-    /// <summary>Creates a required IR parameter with an explicit wire name.</summary>
-    /// <param name="name">The generated member name.</param>
-    /// <param name="wireName">The original HTTP name.</param>
-    /// <param name="type">The parameter value type.</param>
-    /// <returns>The parameter declaration.</returns>
+    /// <summary>Создаёт обязательный параметр IR с явно заданным именем передачи.</summary>
+    /// <param name="name">Имя сгенерированного члена.</param>
+    /// <param name="wireName">Исходное имя HTTP.</param>
+    /// <param name="type">Тип значения параметра.</param>
+    /// <returns>Объявление параметра.</returns>
     private static IrParameter Parameter(string name, string wireName, IrType type) =>
         new() { Name = name, OriginalName = wireName, Type = type, IsRequired = true };
 
-    /// <summary>Creates an optional primitive type.</summary>
-    /// <param name="kind">The primitive kind.</param>
-    /// <returns>The optional type wrapper.</returns>
+    /// <summary>Создаёт необязательный примитивный тип.</summary>
+    /// <param name="kind">Разновидность примитивного типа.</param>
+    /// <returns>Обёртка необязательного типа.</returns>
     private static IrOptionalType Optional(IrPrimitiveKind kind) =>
         new() { InnerType = new IrPrimitiveType { PrimitiveKind = kind } };
 }

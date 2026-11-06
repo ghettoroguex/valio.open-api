@@ -28,7 +28,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
-    /// <summary>The configured UUID validation mode.</summary>
+    /// <summary>Настроенный режим проверки UUID.</summary>
     private readonly string? _uuidFormat;
 
 

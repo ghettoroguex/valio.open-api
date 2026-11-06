@@ -68,7 +68,7 @@ public sealed class ValidatorSemanticsRegressionTests
         new ZodAstRenderer().RenderSchema(record.ValueSchema).Should().Be("z.lazy(() => NodeSchema)");
     }
 
-    /// <summary>Verifies allOf keeps local narrowing but removes equivalent inherited validation.</summary>
+    /// <summary>Проверяет, что allOf сохраняет локальное сужение ограничений и исключает идентичные унаследованные проверки.</summary>
     [Test]
     public void ZodAllOf_PreservesNarrowingAndOmitsIdenticalProperties()
     {

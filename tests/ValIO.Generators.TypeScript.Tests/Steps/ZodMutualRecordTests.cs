@@ -8,13 +8,13 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
-/// <summary>Checks cyclic typed records in generated ES modules.</summary>
+/// <summary>Проверяет циклические типизированные словари в сгенерированных модулях ES.</summary>
 [TestFixture]
 public sealed class ZodMutualRecordTests
 {
-    /// <summary>Compiles and imports mutually recursive record schemas against both Zod versions.</summary>
-    /// <param name="version">The selected Zod package alias.</param>
-    /// <returns>A task that completes after mutually recursive ESM schemas validate nested values.</returns>
+    /// <summary>Компилирует и импортирует взаимно рекурсивные схемы словарей для обеих версий Zod.</summary>
+    /// <param name="version">Выбранный псевдоним пакета Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки вложенных значений взаимно рекурсивными схемами ESM.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Mutual_records_validate_nested_values_in_esm(string version)
@@ -74,11 +74,11 @@ public sealed class ZodMutualRecordTests
         }
     }
 
-    /// <summary>Runs a Node command with the pinned test dependencies.</summary>
-    /// <param name="workingDirectory">The isolated generated-file directory.</param>
-    /// <param name="modules">The pinned dependency directory.</param>
-    /// <param name="arguments">The Node command arguments.</param>
-    /// <returns>A task that completes after the command succeeds.</returns>
+    /// <summary>Выполняет команду Node с тестовыми зависимостями закреплённых версий.</summary>
+    /// <param name="workingDirectory">Изолированный каталог сгенерированных файлов.</param>
+    /// <param name="modules">Каталог зависимостей закреплённых версий.</param>
+    /// <param name="arguments">Аргументы команды Node.</param>
+    /// <returns>Задача, завершающаяся после успешного выполнения команды.</returns>
     private static async Task RunNode(string workingDirectory, string modules, IReadOnlyList<string> arguments)
     {
         var start = new ProcessStartInfo("node")

@@ -137,9 +137,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return $"z.array({elementSchema})";
     }
     
-    /// <summary>Renders a string-keyed record while preserving its value schema.</summary>
-    /// <param name="node">The record schema to render.</param>
-    /// <returns>The Zod record expression.</returns>
+    /// <summary>Формирует запись со строковыми ключами, сохраняя схему значений.</summary>
+    /// <param name="node">Формируемая схема записи.</param>
+    /// <returns>Выражение записи Zod.</returns>
     private string VisitZodRecord(ZodRecordNode node)
     {
         var key = Visit((AstNode)node.KeySchema);

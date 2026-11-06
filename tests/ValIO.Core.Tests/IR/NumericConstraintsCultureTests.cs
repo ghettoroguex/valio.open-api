@@ -5,13 +5,13 @@ using ValIO.Core.Tests.TestHelpers;
 
 namespace ValIO.Core.Tests.IR;
 
-/// <summary>Checks that OpenAPI numeric bounds do not depend on the process culture.</summary>
+/// <summary>Проверяет независимость числовых границ OpenAPI от региональных настроек процесса.</summary>
 [TestFixture]
 public sealed class NumericConstraintsCultureTests
 {
-    /// <summary>Parses all fractional bounds under cultures with different decimal separators.</summary>
-    /// <param name="culture">The current culture used while building the IR.</param>
-    /// <returns>A task that completes after all bounds have been checked.</returns>
+    /// <summary>Разбирает все дробные границы при региональных настройках с разными десятичными разделителями.</summary>
+    /// <param name="culture">Региональные настройки, используемые при построении промежуточного представления.</param>
+    /// <returns>Задача, завершающаяся после проверки всех границ.</returns>
     [TestCase("en-US")]
     [TestCase("ru-RU")]
     public async Task FractionalBoundsUseInvariantOpenApiSyntax(string culture)

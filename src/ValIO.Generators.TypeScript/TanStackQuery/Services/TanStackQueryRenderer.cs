@@ -72,11 +72,11 @@ public class TanStackQueryRenderer
     }
     
     /// <summary>
-    /// Renders a query key function for an operation.
+    /// Формирует функцию ключа запроса для операции.
     /// </summary>
-    /// <param name="operation">The source operation.</param>
-    /// <returns>The generated TypeScript function.</returns>
-    /// <exception cref="ArgumentNullException">The operation is null.</exception>
+    /// <param name="operation">Исходная операция.</param>
+    /// <returns>Сгенерированная функция TypeScript.</returns>
+    /// <exception cref="ArgumentNullException">Операция равна null.</exception>
     public string RenderQueryKeyFunction(IrOperation operation)
     {
         if (operation == null)

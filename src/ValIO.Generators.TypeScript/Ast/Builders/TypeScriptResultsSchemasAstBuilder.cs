@@ -21,16 +21,16 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
-    /// <summary>Whether generated schemas use the shared UUID regular expression.</summary>
+    /// <summary>Используют ли генерируемые схемы общее регулярное выражение UUID.</summary>
     private readonly bool _usesUuidRegex;
 
 
-    /// <summary>Creates a response schema builder for a finalized document.</summary>
-    /// <param name="documentContext">The shared document indexes.</param>
-    /// <param name="namingConverter">The generated identifier naming policy.</param>
-    /// <param name="validation">The runtime validation strategy.</param>
-    /// <param name="uuidFormat">The configured UUID validation mode.</param>
-    /// <exception cref="ArgumentNullException">A required collaborator is null.</exception>
+    /// <summary>Создаёт построитель схем ответов для окончательного документа.</summary>
+    /// <param name="documentContext">Общие индексы документа.</param>
+    /// <param name="namingConverter">Правила именования генерируемых идентификаторов.</param>
+    /// <param name="validation">Стратегия валидации во время выполнения.</param>
+    /// <param name="uuidFormat">Настроенный режим проверки UUID.</param>
+    /// <exception cref="ArgumentNullException">Необходимая зависимость равна null.</exception>
     internal TypeScriptResultsSchemasAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat)
         : base(documentContext)
@@ -89,10 +89,10 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
                 $"Response body validation schemas for {operation.MethodName}."));
     }
 
-    /// <summary>Builds runtime imports for the schemas declared in a response file.</summary>
-    /// <param name="definedTypes">The materialized response types requiring schemas.</param>
-    /// <param name="fileOrganization">The generated output layout.</param>
-    /// <returns>Imports for validation, UUID constants and referenced model schemas.</returns>
+    /// <summary>Создаёт импорты времени выполнения для схем, объявленных в файле ответов.</summary>
+    /// <param name="definedTypes">Типы ответов, для которых требуются схемы.</param>
+    /// <param name="fileOrganization">Структура генерируемых файлов.</param>
+    /// <returns>Импорты для валидации, констант UUID и схем моделей, на которые есть ссылки.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<ValIO.Core.IR.Types.IrType> definedTypes, FileOrganization? fileOrganization)
     {
         var imports = new List<ImportNode>();

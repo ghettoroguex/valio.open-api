@@ -50,10 +50,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
 
     /// <summary>
-    /// Renders a complete TypeScript source file.
+    /// Формирует полный исходный файл TypeScript.
     /// </summary>
-    /// <param name="node">The source file to render.</param>
-    /// <returns>The rendered source, ending in one line break.</returns>
+    /// <param name="node">Исходный файл для вывода.</param>
+    /// <returns>Сформированный исходный текст, заканчивающийся одним переводом строки.</returns>
     public string Render(SourceFileNode node)
     {
         _sb.Clear();
@@ -793,10 +793,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
-    /// <summary>Renders a function and its documentation.</summary>
-    /// <param name="sb">The output buffer.</param>
-    /// <param name="node">The function declaration.</param>
-    /// <param name="indentLevel">The indentation level.</param>
+    /// <summary>Формирует функцию и её документацию.</summary>
+    /// <param name="sb">Буфер вывода.</param>
+    /// <param name="node">Объявление функции.</param>
+    /// <param name="indentLevel">Уровень отступа.</param>
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
         // Формируем расширенный JSDoc комментарий
@@ -1249,9 +1249,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return type.Accept(this);
     }
 
-    /// <summary>Renders a literal using TypeScript's culture-independent numeric syntax.</summary>
-    /// <param name="node">The literal to render.</param>
-    /// <returns>The TypeScript literal expression.</returns>
+    /// <summary>Формирует литерал с независимым от локали числовым синтаксисом TypeScript.</summary>
+    /// <param name="node">Литерал для вывода.</param>
+    /// <returns>Литеральное выражение TypeScript.</returns>
     private string RenderLiteral(LiteralExpressionNode node)
     {
         return node.LiteralKind switch

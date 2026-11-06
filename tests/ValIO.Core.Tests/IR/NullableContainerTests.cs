@@ -5,15 +5,15 @@ using ValIO.Core.Tests.TestHelpers;
 
 namespace ValIO.Core.Tests.IR;
 
-/// <summary>Checks that container nullability remains distinct from element and property optionality.</summary>
+/// <summary>Проверяет, что допустимость null для контейнера не смешивается с необязательностью элементов и свойств.</summary>
 [TestFixture]
 public sealed class NullableContainerTests
 {
-    /// <summary>Preserves nullable arrays and dictionaries in both OpenAPI dialects.</summary>
-    /// <param name="version">The OpenAPI version under test.</param>
-    /// <param name="arraySchema">The nullable array schema.</param>
-    /// <param name="dictionarySchema">The nullable dictionary schema.</param>
-    /// <returns>A task that completes after nullable containers are checked in the parsed document.</returns>
+    /// <summary>Сохраняет допустимость null для массивов и словарей в обеих версиях OpenAPI.</summary>
+    /// <param name="version">Проверяемая версия OpenAPI.</param>
+    /// <param name="arraySchema">Схема массива, допускающего null.</param>
+    /// <param name="dictionarySchema">Схема словаря, допускающего null.</param>
+    /// <returns>Задача, завершающаяся после проверки контейнеров, допускающих null, в разобранном документе.</returns>
     [TestCase("3.0.3", "{\"type\":\"array\",\"nullable\":true,\"items\":{\"type\":\"string\"}}", "{\"type\":\"object\",\"nullable\":true,\"additionalProperties\":{\"type\":\"string\"}}")]
     [TestCase("3.1.0", "{\"type\":[\"array\",\"null\"],\"items\":{\"type\":\"string\"}}", "{\"type\":[\"object\",\"null\"],\"additionalProperties\":{\"type\":\"string\"}}")]
     public async Task Nullable_containers_keep_their_inner_type(string version, string arraySchema, string dictionarySchema)

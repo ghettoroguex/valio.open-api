@@ -21,11 +21,11 @@ internal static class GeneratedTypeScriptRuntime
         return output;
     }
 
-    /// <summary>Creates transpilation infrastructure using real dependency packages and independently pinned Zod major versions.</summary>
-    /// <param name="workspace">The generated module directory.</param>
-    /// <param name="modules">The external node_modules directory.</param>
-    /// <param name="sourcePaths">The validated generated TypeScript files to transpile.</param>
-    /// <returns>The JavaScript bootstrap, defining root, path, and assert for callers.</returns>
+    /// <summary>Создаёт инфраструктуру транспиляции с реальными пакетами зависимостей и отдельно закреплёнными основными версиями Zod.</summary>
+    /// <param name="workspace">Каталог сгенерированных модулей.</param>
+    /// <param name="modules">Внешний каталог node_modules.</param>
+    /// <param name="sourcePaths">Проверенные сгенерированные файлы TypeScript для транспиляции.</param>
+    /// <returns>Начальный сценарий JavaScript, предоставляющий вызывающему коду переменные root, path и assert.</returns>
     private static string Bootstrap(string workspace, string modules, IReadOnlyList<string> sourcePaths) => $$"""
         const fs = require('node:fs');
         const path = require('node:path');

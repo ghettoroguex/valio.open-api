@@ -43,17 +43,17 @@ public static class UuidFormatSupport
         return model.Composition != null && model.Composition.Types.Any(ContainsUuid);
     }
 
-    /// <summary>Checks path, query and header parameters for inline UUID types.</summary>
-    /// <param name="operation">The operation to inspect.</param>
-    /// <returns>Whether any parameter contains a UUID type.</returns>
+    /// <summary>Проверяет параметры пути, запроса и заголовков на наличие встроенных типов UUID.</summary>
+    /// <param name="operation">Проверяемая операция.</param>
+    /// <returns>Содержит ли какой-либо параметр тип UUID.</returns>
     public static bool OperationParamsUseUuid(IrOperation operation)
         => operation.PathParameters.Any(p => ContainsUuid(p.Type))
         || operation.QueryParameters.Any(p => ContainsUuid(p.Type))
         || operation.HeaderParameters.Any(p => ContainsUuid(p.Type));
 
-    /// <summary>Checks models, parameters, request bodies and responses for inline UUID types.</summary>
-    /// <param name="document">The document to inspect.</param>
-    /// <returns>Whether the generated validation may need the shared UUID format.</returns>
+    /// <summary>Проверяет модели, параметры, тела запросов и ответы на наличие встроенных типов UUID.</summary>
+    /// <param name="document">Проверяемый документ.</param>
+    /// <returns>Может ли сгенерированная проверка требовать общий формат UUID.</returns>
     public static bool DocumentUsesUuid(IrDocument document)
         => document.Models.Any(ModelUsesUuid)
         || document.Clients.Any(c => c.Operations.Any(operation => OperationParamsUseUuid(operation)

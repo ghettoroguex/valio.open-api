@@ -84,8 +84,8 @@ public sealed class DefaultValuesGenerationTests
         finally { Directory.Delete(dir, true); }
     }
 
-    /// <summary>Preserves explicit defaults and independent member presence after model and operation affixes.</summary>
-    /// <returns>A task that completes after strict compilation and execution of the affixed default exports.</returns>
+    /// <summary>Сохраняет явные значения по умолчанию и независимую обязательность свойств при добавлении аффиксов к именам моделей и операций.</summary>
+    /// <returns>Задача, завершающаяся после строгой компиляции и выполнения экспортов значений по умолчанию с аффиксами.</returns>
     [Test]
     public async Task AffixedDefaultsPreserveOptionalNullableMembers()
     {

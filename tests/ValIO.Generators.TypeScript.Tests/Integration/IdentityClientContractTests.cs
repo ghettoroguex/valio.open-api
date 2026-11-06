@@ -12,11 +12,11 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Integration;
 
-/// <summary>Exercises independent wire optionality, configured Axios and mixed bodyless responses.</summary>
+/// <summary>Проверяет независимую необязательность при передаче, настроенный Axios и смешанные ответы без тела.</summary>
 [TestFixture]
 public sealed class IdentityClientContractTests
 {
-    /// <summary>The model and query declarations retain all four presence/nullability combinations.</summary>
+    /// <summary>Объявления модели и запроса сохраняют все четыре сочетания наличия и допустимости null.</summary>
     [Test]
     public void ModelsAndParametersKeepPresenceSeparateFromNull()
     {
@@ -56,7 +56,7 @@ public sealed class IdentityClientContractTests
         paramsCode.Should().Contain("optionalValue?: string;");
     }
 
-    /// <summary>AllOf retains the base constraint when a local declaration is less restrictive.</summary>
+    /// <summary>AllOf сохраняет ограничение базового типа, когда локальное объявление менее строгое.</summary>
     [Test]
     public void AllOfDoesNotRelaxInheritedRequiredProperty()
     {
@@ -76,7 +76,7 @@ public sealed class IdentityClientContractTests
         derived.Should().NotContain("id?:");
     }
 
-    /// <summary>AllOf strengthens an optional nullable base and retains both value constraints.</summary>
+    /// <summary>AllOf ужесточает необязательное допускающее null базовое свойство и сохраняет оба ограничения значения.</summary>
     [Test]
     public void AllOfNarrowsPresenceAndIntersectsConflictingValueTypes()
     {
@@ -94,8 +94,8 @@ public sealed class IdentityClientContractTests
         code.Should().NotContain("id?:");
     }
 
-    /// <summary>The shared allOf fixture preserves inherited and local constraints in generated declarations.</summary>
-    /// <returns>A task that completes after the allOf fixture output is verified.</returns>
+    /// <summary>Общий тестовый пример allOf сохраняет унаследованные и локальные ограничения в сгенерированных объявлениях.</summary>
+    /// <returns>Задача, завершающаяся после проверки результата тестового примера allOf.</returns>
     [Test]
     public async Task AllOfFixtureGeneratesRequiredNonNullIntersection()
     {
@@ -109,7 +109,7 @@ public sealed class IdentityClientContractTests
         child.Should().NotContain("id?:");
     }
 
-    /// <summary>Axios accepts an explicit configured client after the abort signal and defaults to the configured instance.</summary>
+    /// <summary>Axios принимает явно настроенный клиент после сигнала отмены и по умолчанию использует настроенный экземпляр.</summary>
     [Test]
     public void AxiosUsesCallerClientOrConfiguredInstance()
     {
@@ -128,8 +128,8 @@ public sealed class IdentityClientContractTests
         code.Should().Contain("axiosInstance.request");
     }
 
-    /// <summary>Documented bodyless successes are represented and never parsed as JSON by fetch.</summary>
-    /// <param name="transport">The native HTTP transport used to decode successful responses.</param>
+    /// <summary>Документированные успешные ответы без тела представлены в результате и не разбираются fetch как JSON.</summary>
+    /// <param name="transport">Нативный HTTP-транспорт для обработки успешных ответов.</param>
     [TestCase("axios")]
     [TestCase("fetch")]
     public void MixedResponsesIncludeBodylessSuccess(string transport)
@@ -150,8 +150,8 @@ public sealed class IdentityClientContractTests
             code.IndexOf("204", StringComparison.Ordinal).Should().BeLessThan(code.IndexOf("response.json", StringComparison.Ordinal));
     }
 
-    /// <summary>Generated client separators contain no spaces while string literals keep theirs.</summary>
-    /// <param name="transport">The selected HTTP transport.</param>
+    /// <summary>Разделители сгенерированного клиента не содержат пробелов, а строковые литералы сохраняют свои пробелы.</summary>
+    /// <param name="transport">Выбранный HTTP-транспорт.</param>
     [TestCase("axios")]
     [TestCase("fetch")]
     public void ClientBlankLinesDoNotContainWhitespace(string transport)
@@ -165,7 +165,7 @@ public sealed class IdentityClientContractTests
         code.Should().NotEndWith(Environment.NewLine + Environment.NewLine);
     }
 
-    /// <summary>Pure bodyless responses retain a void return and do not read JSON in fetch.</summary>
+    /// <summary>Ответы исключительно без тела сохраняют возвращаемый тип void и не читают JSON через fetch.</summary>
     [Test]
     public void FetchVoidDoesNotReadJson()
     {
@@ -176,19 +176,19 @@ public sealed class IdentityClientContractTests
         code.Should().NotContain("response.json");
     }
 
-    /// <summary>Creates one model property for the presence/nullability matrix.</summary>
-    /// <param name="name">The property name.</param>
-    /// <param name="type">The property value type.</param>
-    /// <param name="required">Whether the property is required.</param>
-    /// <returns>The configured IR property.</returns>
+    /// <summary>Создаёт свойство модели для матрицы наличия и допустимости null.</summary>
+    /// <param name="name">Имя свойства.</param>
+    /// <param name="type">Тип значения свойства.</param>
+    /// <param name="required">Является ли свойство обязательным.</param>
+    /// <returns>Настроенное свойство IR.</returns>
     private static IrProperty Property(string name, IrType type, bool required) => new()
     {
         Name = name, OriginalName = name, Type = type, IsRequired = required
     };
 
-    /// <summary>Creates an operation with explicitly documented responses.</summary>
-    /// <param name="responses">The operation's documented responses.</param>
-    /// <returns>The configured operation.</returns>
+    /// <summary>Создаёт операцию с явно документированными ответами.</summary>
+    /// <param name="responses">Документированные ответы операции.</param>
+    /// <returns>Настроенная операция.</returns>
     private static IrOperation Operation(IReadOnlyList<IrResponse> responses) => new()
     {
         MethodName = "Example", Path = "/example", HttpMethod = "GET",

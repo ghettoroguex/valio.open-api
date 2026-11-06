@@ -6,16 +6,16 @@ using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
-/// <summary>Builds the shared UUID constant import required by inline request body validation.</summary>
+/// <summary>Создаёт импорт общей константы UUID для встроенной проверки тела запроса.</summary>
 internal static class TypeScriptInlineUuidImport
 {
-    /// <summary>Creates an import when an inline body schema references the configured UUID constant.</summary>
-    /// <param name="operations">The operations generated in the source file.</param>
-    /// <param name="validation">The selected client validation strategy.</param>
-    /// <param name="uuidFormat">The configured UUID validation mode.</param>
-    /// <param name="modelsPath">The configured models directory.</param>
-    /// <param name="relativePrefix">The relative path from the generated file to the output root.</param>
-    /// <returns>The required runtime import, or null when no inline body needs it.</returns>
+    /// <summary>Создаёт импорт, если встроенная схема тела ссылается на настроенную константу UUID.</summary>
+    /// <param name="operations">Операции, генерируемые в исходном файле.</param>
+    /// <param name="validation">Выбранная стратегия проверки клиента.</param>
+    /// <param name="uuidFormat">Настроенный режим проверки UUID.</param>
+    /// <param name="modelsPath">Настроенный каталог моделей.</param>
+    /// <param name="relativePrefix">Относительный путь от сгенерированного файла до корневого каталога результатов.</param>
+    /// <returns>Необходимый импорт времени выполнения или null, если встроенным схемам тела он не нужен.</returns>
     public static ImportNode? Create(
         IEnumerable<IrOperation> operations,
         IClientValidationStrategy validation,

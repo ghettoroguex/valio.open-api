@@ -7,31 +7,31 @@ using ValIO.Generators.TypeScript.Zod.Ast.Visitors;
 
 namespace ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 
-/// <summary>Represents a Zod record with typed key and value schemas.</summary>
+/// <summary>Представляет запись Zod с типизированными схемами ключей и значений.</summary>
 public sealed class ZodRecordNode : ZodSchemaNode
 {
-    /// <summary>Gets the schema applied to each record key.</summary>
-    /// <value>The schema of a record key.</value>
+    /// <summary>Возвращает схему для каждого ключа записи.</summary>
+    /// <value>Схема ключа записи.</value>
     public ZodSchemaNode KeySchema { get; }
 
-    /// <summary>Gets the schema applied to each record value.</summary>
-    /// <value>The schema of a record value.</value>
+    /// <summary>Возвращает схему для каждого значения записи.</summary>
+    /// <value>Схема значения записи.</value>
     public ZodSchemaNode ValueSchema { get; }
 
-    /// <summary>Gets whether value schema evaluation is deferred to avoid cyclic imports.</summary>
-    /// <value>True when the value expression must be evaluated lazily.</value>
+    /// <summary>Возвращает признак отложенного вычисления схемы значений для предотвращения циклических импортов.</summary>
+    /// <value>True, если выражение значения нужно вычислять отложенно.</value>
     public bool DeferValueSchema { get; }
 
     /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children => new AstNode[] { KeySchema, ValueSchema };
 
-    /// <summary>Creates a record schema node.</summary>
-    /// <param name="keySchema">The schema applied to record keys.</param>
-    /// <param name="valueSchema">The schema applied to record values.</param>
-    /// <param name="type">The optional generated type.</param>
-    /// <param name="metadata">The optional node metadata.</param>
-    /// <param name="deferValueSchema">Whether to evaluate the value schema lazily.</param>
-    /// <exception cref="ArgumentNullException">The key or value schema is null.</exception>
+    /// <summary>Создаёт узел схемы записи.</summary>
+    /// <param name="keySchema">Схема для ключей записи.</param>
+    /// <param name="valueSchema">Схема для значений записи.</param>
+    /// <param name="type">Необязательный сгенерированный тип.</param>
+    /// <param name="metadata">Необязательные метаданные узла.</param>
+    /// <param name="deferValueSchema">Следует ли вычислять схему значений отложенно.</param>
+    /// <exception cref="ArgumentNullException">Схема ключа или значения равна null.</exception>
     public ZodRecordNode(ZodSchemaNode keySchema, ZodSchemaNode valueSchema, TypeNode? type = null,
         IReadOnlyDictionary<string, object>? metadata = null, bool deferValueSchema = false)
         : base(ZodSchemaKind.Expression, type, metadata)

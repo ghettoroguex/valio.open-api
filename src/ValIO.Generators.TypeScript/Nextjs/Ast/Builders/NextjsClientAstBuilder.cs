@@ -38,7 +38,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
-    /// <summary>The configured UUID validation mode.</summary>
+    /// <summary>Настроенный режим проверки UUID.</summary>
     private readonly string? _uuidFormat;
     private readonly int? _defaultRevalidate;
     private readonly bool _generateRevalidateHelpers;
@@ -102,14 +102,14 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
                 $"Next.js (App Router) fetch client for the {operation.MethodName} operation."));
     }
 
-    /// <summary>Imports the native transport types and operation-specific models and validation schemas.</summary>
-    /// <param name="operation">The operation whose imports are generated.</param>
-    /// <param name="operationFileName">The original operation file name.</param>
-    /// <param name="fileOrganization">The configured output layout.</param>
-    /// <param name="hasParameters">Whether a generated parameter type is needed.</param>
-    /// <param name="hasResultType">Whether a generated result union is needed.</param>
-    /// <param name="isCacheable">Whether the operation uses Next.js cache tags.</param>
-    /// <returns>The imports required by the native client operation.</returns>
+    /// <summary>Импортирует типы транспорта, модели и схемы проверки операции.</summary>
+    /// <param name="operation">Операция, для которой создаются импорты.</param>
+    /// <param name="operationFileName">Исходное имя файла операции.</param>
+    /// <param name="fileOrganization">Настроенная структура выходных файлов.</param>
+    /// <param name="hasParameters">Требуется ли сгенерированный тип параметров.</param>
+    /// <param name="hasResultType">Требуется ли сгенерированный тип объединения результатов.</param>
+    /// <param name="isCacheable">Использует ли операция теги кэша Next.js.</param>
+    /// <returns>Импорты, необходимые операции клиента транспорта.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,

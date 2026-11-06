@@ -37,7 +37,7 @@ public sealed class AngularServiceAstBuilder : AstBuilderBase
     /// <summary>The configured request and response validation strategy.</summary>
     private readonly IClientValidationStrategy _validation;
 
-    /// <summary>The configured UUID validation mode.</summary>
+    /// <summary>Настроенный режим проверки UUID.</summary>
     private readonly string? _uuidFormat;
 
     /// <summary>Maps declared response bodies to their TypeScript assertion types when validation is disabled.</summary>

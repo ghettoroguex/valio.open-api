@@ -24,11 +24,11 @@ internal static class GeneratedTypeScriptCompiler
         return output;
     }
 
-    /// <summary>Builds a strict compiler program that resolves real dependencies and independently pinned Zod major versions.</summary>
-    /// <param name="workspace">The temporary generated-source root.</param>
-    /// <param name="modules">The external node_modules directory containing real package declarations.</param>
-    /// <param name="sourcePaths">Every emitted TypeScript source path, including clients, models, schemas, and exports.</param>
-    /// <returns>A CommonJS Node script that fails on any compiler diagnostic.</returns>
+    /// <summary>Создаёт программу строгой компиляции с разрешением реальных зависимостей и отдельно закреплённых основных версий Zod.</summary>
+    /// <param name="workspace">Корневой временный каталог сгенерированных исходных файлов.</param>
+    /// <param name="modules">Внешний каталог node_modules с декларациями реальных пакетов.</param>
+    /// <param name="sourcePaths">Пути ко всем сгенерированным исходным файлам TypeScript, включая клиенты, модели, схемы и экспорты.</param>
+    /// <returns>Сценарий Node.js в формате CommonJS, завершающийся ошибкой при любой диагностике компилятора.</returns>
     private static string CompilerScript(string workspace, string modules, IReadOnlyList<string> sourcePaths) => $$"""
         const path = require('node:path');
         const modules = {{JsonSerializer.Serialize(modules)}};

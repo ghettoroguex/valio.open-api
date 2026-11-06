@@ -41,18 +41,18 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         _generateDefaultValues = generateDefaultValues;
     }
 
-    /// <summary>Builds a parameter value type independently of member presence.</summary>
-    /// <param name="type">The parameter or body type.</param>
-    /// <param name="isRequired">Whether the member must be present.</param>
-    /// <returns>The value type without its member-level optional wrapper.</returns>
+    /// <summary>Создаёт тип значения параметра независимо от присутствия члена.</summary>
+    /// <param name="type">Тип параметра или тела запроса.</param>
+    /// <param name="isRequired">Обязателен ли член.</param>
+    /// <returns>Тип значения без обёртки optional на уровне члена.</returns>
     private TypeNode BuildIrMemberTypeNode(IrType type, bool isRequired)
     {
         return _typeBuilder(UnwrapMemberOptional(type));
     }
 
-    /// <summary>Removes member-level optional wrappers while retaining nullable value wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>The member value type.</returns>
+    /// <summary>Удаляет обёртки optional на уровне члена, сохраняя обёртки nullable для значения.</summary>
+    /// <param name="type">Исходный тип члена.</param>
+    /// <returns>Тип значения члена.</returns>
     private static IrType UnwrapMemberOptional(IrType type) => type switch
     {
         IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),

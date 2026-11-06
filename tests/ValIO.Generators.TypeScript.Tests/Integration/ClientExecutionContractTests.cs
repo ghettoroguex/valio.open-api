@@ -14,12 +14,12 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Integration;
 
-/// <summary>Exercises generated client behavior and generated TypeScript types.</summary>
+/// <summary>Проверяет поведение сгенерированных клиентов и типы TypeScript.</summary>
 [TestFixture]
 public sealed class ClientExecutionContractTests
 {
-    /// <summary>Compiles nullable array elements and inherited reference intersections in strict mode.</summary>
-    /// <returns>A task that completes after strict TypeScript compilation succeeds.</returns>
+    /// <summary>Компилирует допускающие null элементы массивов и пересечения унаследованных ссылок в строгом режиме.</summary>
+    /// <returns>Задача, завершающаяся после успешной строгой компиляции TypeScript.</returns>
     [Test]
     public async Task NestedNullableArraysAndInheritedReferencesCompile()
     {
@@ -59,8 +59,8 @@ public sealed class ClientExecutionContractTests
         finally { Directory.Delete(temporary, recursive: true); }
     }
 
-    /// <summary>Runs generated Axios and fetch functions with controlled transports and real response values.</summary>
-    /// <returns>A task that completes after the generated transport assertions pass.</returns>
+    /// <summary>Выполняет сгенерированные функции Axios и fetch с управляемыми транспортами и реальными значениями ответов.</summary>
+    /// <returns>Задача, завершающаяся после успешной проверки сгенерированных транспортов.</returns>
     [Test]
     public async Task ClientsSelectOverridesAndHandleBodylessSuccesses()
     {
@@ -101,9 +101,9 @@ public sealed class ClientExecutionContractTests
         finally { Directory.Delete(temporary, recursive: true); }
     }
 
-    /// <summary>Preserves the original OpenAPI query name across generated transport clients.</summary>
-    /// <param name="transport">The selected TypeScript transport.</param>
-    /// <returns>A task that completes after the transport output is checked.</returns>
+    /// <summary>Проверяет сохранение исходного имени параметра запроса OpenAPI во всех сгенерированных клиентах.</summary>
+    /// <param name="transport">Выбранный транспорт TypeScript.</param>
+    /// <returns>Задача, завершающаяся после проверки результата транспорта.</returns>
     [TestCase("axios")]
     [TestCase("fetch")]
     [TestCase("nextjs")]
@@ -129,8 +129,8 @@ public sealed class ClientExecutionContractTests
         client.Content.Should().MatchRegex(@"\?*\.Paging_Page\b");
     }
 
-    /// <summary>Executes generated Axios and fetch clients with sanitized property names and dotted wire names.</summary>
-    /// <returns>A task that completes after both clients preserve the OpenAPI query names.</returns>
+    /// <summary>Выполняет сгенерированные клиенты Axios и fetch с нормализованными именами свойств и именами передачи с точками.</summary>
+    /// <returns>Задача, завершающаяся после проверки сохранения имён параметров OpenAPI обоими клиентами.</returns>
     [Test]
     public async Task QueryParametersUseOriginalWireNamesAtRuntime()
     {
@@ -163,14 +163,14 @@ public sealed class ClientExecutionContractTests
         finally { Directory.Delete(temporary, recursive: true); }
     }
 
-    /// <summary>Creates an operation with specified responses.</summary>
-    /// <param name="responses">The documented responses.</param>
-    /// <returns>The operation.</returns>
+    /// <summary>Создаёт операцию с заданными ответами.</summary>
+    /// <param name="responses">Документированные ответы.</param>
+    /// <returns>Созданная операция.</returns>
     private static IrOperation Operation(IReadOnlyList<IrResponse> responses) => new()
     { MethodName = "Example", Path = "/example", HttpMethod = "GET", PathParameters = [], QueryParameters = [], HeaderParameters = [], RequestBody = null, Responses = responses };
 
-    /// <summary>Locates pinned runtime dependencies.</summary>
-    /// <returns>The node_modules directory.</returns>
+    /// <summary>Находит зависимости среды выполнения с закреплёнными версиями.</summary>
+    /// <returns>Каталог node_modules.</returns>
     private static string GetModules()
     {
         var modules = Environment.GetEnvironmentVariable("VALIO_TEST_NODE_MODULES");
@@ -178,9 +178,9 @@ public sealed class ClientExecutionContractTests
         return Path.GetFullPath(modules!);
     }
 
-    /// <summary>Creates an isolated directory beside node_modules for TypeScript resolution.</summary>
-    /// <param name="modules">The dependency directory.</param>
-    /// <returns>The created directory.</returns>
+    /// <summary>Создаёт изолированный каталог рядом с node_modules для разрешения зависимостей TypeScript.</summary>
+    /// <param name="modules">Каталог зависимостей.</param>
+    /// <returns>Созданный каталог.</returns>
     private static string CreateDirectory(string modules)
     {
         var path = Path.Combine(Directory.GetParent(modules)!.FullName, "valio-client-" + Guid.NewGuid().ToString("N"));
@@ -188,11 +188,11 @@ public sealed class ClientExecutionContractTests
         return path;
     }
 
-    /// <summary>Runs Node with the pinned dependencies and checks its exit status.</summary>
-    /// <param name="directory">The working directory.</param>
-    /// <param name="modules">The node_modules directory.</param>
-    /// <param name="arguments">The command arguments.</param>
-    /// <returns>A task that completes when Node succeeds.</returns>
+    /// <summary>Запускает Node с зависимостями закреплённых версий и проверяет код завершения.</summary>
+    /// <param name="directory">Рабочий каталог.</param>
+    /// <param name="modules">Каталог node_modules.</param>
+    /// <param name="arguments">Аргументы команды.</param>
+    /// <returns>Задача, завершающаяся после успешного выполнения Node.</returns>
     private static async Task RunNode(string directory, string modules, IReadOnlyList<string> arguments)
     {
         var start = new ProcessStartInfo("node") { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };

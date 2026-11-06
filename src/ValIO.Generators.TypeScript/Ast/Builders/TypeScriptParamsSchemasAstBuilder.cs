@@ -49,10 +49,10 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     public string QueryParamsSchemaName(string operationName)
         => $"{_namingConverter.ToPascalCase(operationName)}QueryParamsSchema";
 
-    /// <summary>Builds runtime schemas for route and query parameters using the finalized document context.</summary>
-    /// <param name="operation">The operation whose parameter schemas and imports are generated.</param>
-    /// <param name="fileOrganization">The optional generated-source layout used to resolve imports.</param>
-    /// <returns>The schema source file, or no file when validation is disabled or no route/query parameters exist.</returns>
+    /// <summary>Создаёт схемы проверки параметров маршрута и запроса с использованием контекста окончательного документа.</summary>
+    /// <param name="operation">Операция, для параметров которой создаются схемы и импорты.</param>
+    /// <param name="fileOrganization">Необязательная структура генерируемых файлов для разрешения импортов.</param>
+    /// <returns>Исходный файл схем либо отсутствие файла, если валидация отключена или параметры маршрута и запроса отсутствуют.</returns>
     public SourceFileNode? BuildParamsSchemasSourceFile(IrOperation operation, FileOrganization? fileOrganization)
     {
         if (!_validation.IsEnabled)
@@ -145,14 +145,14 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
             documentation: new CommentNode(summary, CommentKind.JSDoc),
             isExported: true);
 
-    /// <summary>Builds the imports for the params-schema file: schema runtime, the annotated params
-    /// interface(s) (type-only, sibling <c>./{op}.params</c>), the shared UUID constant and any model schemas.</summary>
-    /// <param name="paramTypes">The route and query parameter types represented by this file.</param>
-    /// <param name="fileOrganization">The generated output layout.</param>
-    /// <param name="annotatedInterfaces">The interfaces used to annotate schemas.</param>
-    /// <param name="fileBase">The operation file stem.</param>
-    /// <param name="constraintConstNames">The generated validation constraint constants.</param>
-    /// <returns>The imports required by the generated schemas.</returns>
+    /// <summary>Создаёт импорты для файла схем параметров: библиотеку схем, аннотированные интерфейсы параметров
+    /// (только типы, соседний файл <c>./{op}.params</c>), общую константу UUID и схемы моделей.</summary>
+    /// <param name="paramTypes">Типы параметров маршрута и запроса, представленные в этом файле.</param>
+    /// <param name="fileOrganization">Структура генерируемых файлов.</param>
+    /// <param name="annotatedInterfaces">Интерфейсы для аннотирования схем.</param>
+    /// <param name="fileBase">Основа имени файла операции.</param>
+    /// <param name="constraintConstNames">Генерируемые константы ограничений валидации.</param>
+    /// <returns>Импорты, необходимые генерируемым схемам.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IReadOnlyList<IrType> paramTypes,
         FileOrganization? fileOrganization,

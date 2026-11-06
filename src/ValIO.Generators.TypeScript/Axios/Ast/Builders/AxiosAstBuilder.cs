@@ -157,9 +157,9 @@ public class AxiosAstBuilder : AstBuilderBase
             properties: properties.ToImmutableList());
     }
 
-    /// <summary>Determines whether a successful response contains binary data.</summary>
-    /// <param name="response">The documented response.</param>
-    /// <returns>Whether the response requires binary decoding.</returns>
+    /// <summary>Определяет, содержит ли успешный ответ двоичные данные.</summary>
+    /// <param name="response">Задокументированный ответ.</param>
+    /// <returns>Требует ли ответ декодирования двоичных данных.</returns>
     private static bool IsBinarySuccessResponse(IrResponse response)
     {
         if (!int.TryParse(response.StatusCode, out var statusCode) || statusCode is < 200 or >= 300)
@@ -171,9 +171,9 @@ public class AxiosAstBuilder : AstBuilderBase
         };
     }
 
-    /// <summary>Removes nullable and optional wrappers from a response type.</summary>
-    /// <param name="type">The response type to inspect.</param>
-    /// <returns>The underlying type, or null when no type is present.</returns>
+    /// <summary>Удаляет обёртки nullable и optional из типа ответа.</summary>
+    /// <param name="type">Проверяемый тип ответа.</param>
+    /// <returns>Базовый тип или null, если тип отсутствует.</returns>
     private static ValIO.Core.IR.Types.IrType? Unwrap(ValIO.Core.IR.Types.IrType? type)
     {
         return type switch

@@ -11,14 +11,14 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
-/// <summary>Checks strict numeric validation for generated model schemas.</summary>
+/// <summary>Проверяет строгую валидацию чисел в сгенерированных схемах моделей.</summary>
 [TestFixture]
 public sealed class ZodStrictNumericTests
 {
-    /// <summary>Compiles and executes generated schemas against both Zod major versions.</summary>
-    /// <param name="version">The selected Zod package alias.</param>
-    /// <returns>A task that completes after numeric schemas pass TypeScript and runtime checks.</returns>
-    /// <param name="culture">The culture used while parsing and generating the model.</param>
+    /// <summary>Компилирует и выполняет сгенерированные схемы с обеими основными версиями Zod.</summary>
+    /// <param name="version">Выбранный псевдоним пакета Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки числовых схем в TypeScript и среде выполнения.</returns>
+    /// <param name="culture">Культура, используемая при разборе и генерации модели.</param>
     [TestCase("zod3", "en-US")]
     [TestCase("zod3", "ru-RU")]
     [TestCase("zod4", "en-US")]
@@ -75,11 +75,11 @@ public sealed class ZodStrictNumericTests
         }
     }
 
-    /// <summary>Runs a Node command with the pinned test dependencies.</summary>
-    /// <param name="workingDirectory">The isolated generated-file directory.</param>
-    /// <param name="modules">The pinned dependency directory.</param>
-    /// <param name="arguments">The Node command arguments.</param>
-    /// <returns>A task that completes after the command succeeds.</returns>
+    /// <summary>Выполняет команду Node с тестовыми зависимостями закреплённых версий.</summary>
+    /// <param name="workingDirectory">Изолированный каталог сгенерированных файлов.</param>
+    /// <param name="modules">Каталог зависимостей закреплённых версий.</param>
+    /// <param name="arguments">Аргументы команды Node.</param>
+    /// <returns>Задача, завершающаяся после успешного выполнения команды.</returns>
     private static async Task RunNode(string workingDirectory, string modules, IReadOnlyList<string> arguments)
     {
         var start = new ProcessStartInfo("node")

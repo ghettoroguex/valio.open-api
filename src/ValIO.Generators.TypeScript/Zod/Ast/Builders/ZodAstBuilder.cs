@@ -95,9 +95,9 @@ public class ZodAstBuilder : AstBuilderBase
         return BuildZodObject(model);
     }
 
-    /// <summary>Excludes inherited properties only when every matching base declaration has identical validation.</summary>
-    /// <param name="model">The allOf model whose local properties are inspected.</param>
-    /// <returns>Local properties that add or change validation.</returns>
+    /// <summary>Исключает унаследованные свойства, только если все соответствующие объявления в базовых типах имеют одинаковые правила проверки.</summary>
+    /// <param name="model">Модель allOf, локальные свойства которой проверяются.</param>
+    /// <returns>Локальные свойства, добавляющие или изменяющие правила проверки.</returns>
     private IReadOnlyList<IrProperty> ExcludeIdenticalInheritedProperties(IrModel model)
     {
         var inherited = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
@@ -127,10 +127,10 @@ public class ZodAstBuilder : AstBuilderBase
             !matches.All(parent => SameValidation(property, parent))).ToArray();
     }
 
-    /// <summary>Compares property presence, value type, and validation constraints.</summary>
-    /// <param name="first">The local declaration.</param>
-    /// <param name="second">An inherited declaration.</param>
-    /// <returns>True when both declarations impose identical validation.</returns>
+    /// <summary>Сравнивает обязательность свойства, тип значения и ограничения проверки.</summary>
+    /// <param name="first">Локальное объявление.</param>
+    /// <param name="second">Унаследованное объявление.</param>
+    /// <returns>True, если оба объявления задают одинаковые правила проверки.</returns>
     private static bool SameValidation(IrProperty first, IrProperty second) =>
         first.IsRequired == second.IsRequired &&
         IrTypeComparer.AreSemanticallyEqual(first.Type, second.Type, ignorePresence: false) &&
@@ -159,9 +159,9 @@ public class ZodAstBuilder : AstBuilderBase
         return new ZodObjectNode(props);
     }
 
-    /// <summary>Builds an object schema for route or query parameters.</summary>
-    /// <param name="parameters">The parameter definitions to translate.</param>
-    /// <returns>A Zod object schema retaining parameter optionality and nullability.</returns>
+    /// <summary>Создаёт схему объекта для параметров маршрута или запроса.</summary>
+    /// <param name="parameters">Преобразуемые определения параметров.</param>
+    /// <returns>Схема объекта Zod, сохраняющая необязательность и допустимость null для параметров.</returns>
     public ZodObjectNode BuildZodObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
@@ -379,10 +379,10 @@ public class ZodAstBuilder : AstBuilderBase
         return new ZodArrayNode(elementSchema);
     }
     
-    /// <summary>Builds a string-keyed record and retains the value schema and recursive model context.</summary>
-    /// <param name="dictionaryType">The dictionary type to translate.</param>
-    /// <param name="currentModelName">The containing model, used to resolve self-references lazily.</param>
-    /// <returns>A Zod record schema with the translated value type.</returns>
+    /// <summary>Создаёт запись со строковыми ключами, сохраняя схему значений и контекст рекурсивной модели.</summary>
+    /// <param name="dictionaryType">Преобразуемый тип словаря.</param>
+    /// <param name="currentModelName">Содержащая модель для отложенного разрешения ссылок на себя.</param>
+    /// <returns>Схема записи Zod с преобразованным типом значения.</returns>
     private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType, string? currentModelName)
     {
         var valueSchema = BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName);

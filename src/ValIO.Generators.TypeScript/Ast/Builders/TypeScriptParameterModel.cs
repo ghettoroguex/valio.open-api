@@ -136,9 +136,9 @@ public sealed class TypeScriptParameterModel
                 && (!requestBody.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(requestBody.Type)));
     }
 
-    /// <summary>Determines whether a parameter can be omitted in the generated TypeScript contract.</summary>
-    /// <param name="parameter">The parameter whose declared presence and type are inspected.</param>
-    /// <returns>Whether the parameter may be undefined.</returns>
+    /// <summary>Определяет, можно ли опустить параметр в генерируемом контракте TypeScript.</summary>
+    /// <param name="parameter">Параметр, объявленное присутствие и тип которого проверяются.</param>
+    /// <returns>Может ли параметр иметь значение undefined.</returns>
     public static bool IsOptional(IrParameter parameter) =>
         !parameter.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(parameter.Type);
 

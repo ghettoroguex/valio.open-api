@@ -8,15 +8,15 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
-/// <summary>Exercises the Identity contract for Zod optionality, typed records and shared UUID formats.</summary>
+/// <summary>Проверяет контракт Identity для необязательности Zod, типизированных словарей и общих форматов UUID.</summary>
 [TestFixture]
 public sealed class IdentityZodUuidContractTests
 {
-    /// <summary>Builds a generated pipeline for a single isolated test.</summary>
-    /// <param name="fixture">The embedded OpenAPI document name.</param>
-    /// <param name="validation">The Zod version to use.</param>
-    /// <param name="transport">The native HTTP transport to generate.</param>
-    /// <returns>The generated files.</returns>
+    /// <summary>Создаёт конвейер генерации для одного изолированного теста.</summary>
+    /// <param name="fixture">Имя встроенного документа OpenAPI.</param>
+    /// <param name="validation">Используемая версия Zod.</param>
+    /// <param name="transport">Нативный HTTP-транспорт для генерации.</param>
+    /// <returns>Сгенерированные файлы.</returns>
     private static async Task<GenerationContext> Generate(string fixture, string validation, string transport = "axios")
     {
         using var harness = new PipelineTestHarness();
@@ -25,10 +25,10 @@ public sealed class IdentityZodUuidContractTests
         { Transports = [transport], ValidationLibrary = validation, UuidFormat = "regex" });
     }
 
-    /// <summary>Compiles inline UUID request validation with every native transport and validator.</summary>
-    /// <param name="transport">The native HTTP transport, including the promise-based Angular client.</param>
-    /// <param name="validation">The validation library whose UUID constant must be imported.</param>
-    /// <returns>A task that completes after every generated source passes strict semantic compilation.</returns>
+    /// <summary>Компилирует встроенную проверку UUID запроса со всеми нативными транспортами и валидаторами.</summary>
+    /// <param name="transport">Нативный HTTP-транспорт, включая клиент Angular на основе Promise.</param>
+    /// <param name="validation">Библиотека валидации, константу UUID которой необходимо импортировать.</param>
+    /// <returns>Задача, завершающаяся после строгой семантической компиляции всех сгенерированных исходных файлов.</returns>
     [Test]
     public async Task InlineUuidBodyCompilesAcrossNativeTransports(
         [Values("axios", "fetch", "solid", "nextjs", "got", "ky", "ofetch", "undici", "angular-promise", "angular-rxjs")] string transport,
@@ -41,9 +41,9 @@ public sealed class IdentityZodUuidContractTests
             $"inline UUID body: {transport}/{validation}");
     }
 
-    /// <summary>Checks platform line endings in generated Zod schemas and multiline TypeScript clients.</summary>
-    /// <param name="version">The selected Zod version.</param>
-    /// <returns>A task that completes after generated files have consistent line endings.</returns>
+    /// <summary>Проверяет окончания строк платформы в сгенерированных схемах Zod и многострочных клиентах TypeScript.</summary>
+    /// <param name="version">Выбранная версия Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки единообразия окончаний строк в сгенерированных файлах.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task GeneratedSchemasAndClientsUseConsistentLineEndings(string version)
@@ -67,9 +67,9 @@ public sealed class IdentityZodUuidContractTests
         }
     }
 
-    /// <summary>Checks all required/nullable combinations and typed recursive records in both Zod versions.</summary>
-    /// <param name="version">The selected Zod version.</param>
-    /// <returns>A task that completes after model presence, nullability and record schemas are checked.</returns>
+    /// <summary>Проверяет все сочетания обязательности и допустимости null и типизированные рекурсивные словари в обеих версиях Zod.</summary>
+    /// <param name="version">Выбранная версия Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки наличия свойств модели, допустимости null и схем словарей.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Model_distinguishes_absence_from_null_and_keeps_dictionary_values(string version)
@@ -89,9 +89,9 @@ public sealed class IdentityZodUuidContractTests
         schema.Should().Contain("z.record(z.string(), z.lazy(() => ContractSchema))");
     }
 
-    /// <summary>Executes the generated model with Zod to verify nullability and dictionary value validation.</summary>
-    /// <param name="version">The selected Zod version.</param>
-    /// <returns>A task that completes after the generated Zod schema rejects invalid values.</returns>
+    /// <summary>Выполняет сгенерированную модель с Zod для проверки допустимости null и валидации значений словаря.</summary>
+    /// <param name="version">Выбранная версия Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки отклонения недопустимых значений сгенерированной схемой Zod.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Generated_model_rejects_invalid_nulls_and_dictionary_values(string version)
@@ -130,9 +130,9 @@ public sealed class IdentityZodUuidContractTests
         }
     }
 
-    /// <summary>Compiles the generated schema and model with strict TypeScript and the selected Zod major version.</summary>
-    /// <param name="version">The selected Zod version.</param>
-    /// <returns>A task that completes after the generated model and schema pass strict TypeScript compilation.</returns>
+    /// <summary>Компилирует сгенерированные схему и модель в строгом режиме TypeScript с выбранной основной версией Zod.</summary>
+    /// <param name="version">Выбранная версия Zod.</param>
+    /// <returns>Задача, завершающаяся после успешной строгой компиляции сгенерированных модели и схемы в TypeScript.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Generated_model_and_schema_typecheck_strictly(string version)
@@ -173,9 +173,9 @@ public sealed class IdentityZodUuidContractTests
         }
     }
 
-    /// <summary>Checks typed record values in inline request and result schemas.</summary>
-    /// <param name="version">The selected Zod version.</param>
-    /// <returns>A task that completes after inline request and response record schemas are verified.</returns>
+    /// <summary>Проверяет типизированные значения словаря во встроенных схемах запроса и результата.</summary>
+    /// <param name="version">Выбранная версия Zod.</param>
+    /// <returns>Задача, завершающаяся после проверки встроенных схем словаря для запроса и ответа.</returns>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Inline_dictionaries_use_two_argument_record(string version)
@@ -188,9 +188,9 @@ public sealed class IdentityZodUuidContractTests
         client.Should().MatchRegex(recordPattern);
     }
 
-    /// <summary>Checks shared UUID discovery even when no model contains UUIDs.</summary>
-    /// <param name="fixture">The document with one UUID usage.</param>
-    /// <returns>A task that completes after UUID discovery and shared imports are checked.</returns>
+    /// <summary>Проверяет общее обнаружение UUID, даже если ни одна модель не содержит UUID.</summary>
+    /// <param name="fixture">Документ с одним использованием UUID.</param>
+    /// <returns>Задача, завершающаяся после проверки обнаружения UUID и общих импортов.</returns>
     [TestCase("uuid-only-response.json")]
     [TestCase("uuid-only-body.json")]
     [TestCase("uuid-only-header.json")]
@@ -206,8 +206,8 @@ public sealed class IdentityZodUuidContractTests
         }
     }
 
-    /// <summary>Executes the generated JavaScript regex against the Identity UUID boundary cases.</summary>
-    /// <returns>A task that completes after the generated regular expression is executed against the UUID corpus.</returns>
+    /// <summary>Выполняет сгенерированное регулярное выражение JavaScript на граничных случаях UUID Identity.</summary>
+    /// <returns>Задача, завершающаяся после проверки сгенерированного регулярного выражения на наборе UUID.</returns>
     [Test]
     public async Task Generated_uuid_regex_rejects_every_trailing_character()
     {

@@ -309,17 +309,17 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         };
     }
     
-    /// <summary>Builds a property value type without conflating absence and JSON null.</summary>
-    /// <param name="property">The property whose type may carry an optional wrapper.</param>
-    /// <returns>The value type; optionality is represented by the property marker.</returns>
+    /// <summary>Создаёт тип значения свойства, не смешивая отсутствие свойства и JSON null.</summary>
+    /// <param name="property">Свойство, тип которого может содержать обёртку optional.</param>
+    /// <returns>Тип значения; необязательность выражается маркером свойства.</returns>
     private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
     {
         return BuildType(UnwrapMemberOptional(property.Type));
     }
 
-    /// <summary>Removes member-level optional wrappers while preserving nullable wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>The value type without member-level optional wrappers.</returns>
+    /// <summary>Удаляет обёртки optional на уровне члена, сохраняя обёртки nullable.</summary>
+    /// <param name="type">Исходный тип члена.</param>
+    /// <returns>Тип значения без обёрток optional на уровне члена.</returns>
     private static IrType UnwrapMemberOptional(IrType type) => type switch
     {
         IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
@@ -327,9 +327,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         _ => type
     };
 
-    /// <summary>Detects optionality through nested nullable and optional wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>Whether the member permits omission.</returns>
+    /// <summary>Определяет необязательность через вложенные обёртки nullable и optional.</summary>
+    /// <param name="type">Исходный тип члена.</param>
+    /// <returns>Допускает ли член отсутствие значения.</returns>
     internal static bool IsOptionalMemberType(IrType type) => type switch
     {
         IrOptionalType => true,
@@ -338,12 +338,12 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     };
 
     /// <summary>
-    /// Builds the source file for a model.
+    /// Создаёт исходный файл модели.
     /// </summary>
-    /// <param name="model">The model to generate.</param>
-    /// <param name="importPath">The optional import path override.</param>
-    /// <param name="fileOrganization">The generated file organization.</param>
-    /// <returns>The model source file.</returns>
+    /// <param name="model">Модель для генерации.</param>
+    /// <param name="importPath">Необязательное переопределение пути импорта.</param>
+    /// <param name="fileOrganization">Организация генерируемых файлов.</param>
+    /// <returns>Исходный файл модели.</returns>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
 
@@ -416,10 +416,10 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     }
 
     /// <summary>
-    /// Builds an interface declaration from a model.
+    /// Создаёт объявление интерфейса из модели.
     /// </summary>
-    /// <param name="model">The model to generate.</param>
-    /// <returns>The interface declaration.</returns>
+    /// <param name="model">Модель для генерации.</param>
+    /// <returns>Объявление интерфейса.</returns>
     public InterfaceDeclarationNode BuildInterface(IrModel model)
     {
         var name = new IdentifierNode(model.Name);
@@ -455,9 +455,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             documentation: comment);
     }
     
-    /// <summary>Collects each inherited property declaration along the allOf inheritance graph.</summary>
-    /// <param name="model">The model whose bases are inspected.</param>
-    /// <returns>Inherited declarations indexed by their original wire name.</returns>
+    /// <summary>Собирает объявления всех свойств, наследуемых по графу allOf.</summary>
+    /// <param name="model">Модель, базовые типы которой проверяются.</param>
+    /// <returns>Наследуемые объявления, индексированные по исходному имени в данных.</returns>
     private Dictionary<string, List<IrProperty>> CollectInheritedProperties(IrModel model)
     {
         var result = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
@@ -484,20 +484,20 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         return result;
     }
 
-    /// <summary>Checks whether two property declarations impose the same value and presence contract.</summary>
-    /// <param name="left">The local property declaration.</param>
-    /// <param name="right">An inherited property declaration.</param>
-    /// <returns>Whether the inherited declaration already represents the local contract.</returns>
+    /// <summary>Проверяет, задают ли два объявления свойства одинаковый контракт значения и присутствия.</summary>
+    /// <param name="left">Локальное объявление свойства.</param>
+    /// <param name="right">Наследуемое объявление свойства.</param>
+    /// <returns>Представляет ли наследуемое объявление локальный контракт.</returns>
     private static bool HasEquivalentPropertyContract(IrProperty left, IrProperty right) =>
         (left.IsRequired && !IsOptionalMemberType(left.Type)) ==
             (right.IsRequired && !IsOptionalMemberType(right.Type)) &&
         left.Constraints == right.Constraints &&
         IrTypeComparer.AreSemanticallyEqual(left.Type, right.Type, ignorePresence: false);
 
-    /// <summary>Intersects a local property with every inherited value and presence constraint.</summary>
-    /// <param name="property">The locally declared property.</param>
-    /// <param name="bases">Inherited declarations with the same wire name.</param>
-    /// <returns>A compatible property that preserves every allOf constraint.</returns>
+    /// <summary>Пересекает локальное свойство со всеми наследуемыми ограничениями значения и присутствия.</summary>
+    /// <param name="property">Локально объявленное свойство.</param>
+    /// <param name="bases">Наследуемые объявления с тем же именем в данных.</param>
+    /// <returns>Совместимое свойство, сохраняющее все ограничения allOf.</returns>
     private PropertyDeclarationNode BuildIntersectedProperty(IrProperty property, IReadOnlyList<IrProperty> bases)
     {
         var declarations = bases.Append(property).ToArray();
@@ -841,9 +841,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         };
     }
     
-    /// <summary>Collects references from the declaration and inherited property intersections.</summary>
-    /// <param name="model">The model to inspect.</param>
-    /// <returns>The names of referenced models.</returns>
+    /// <summary>Собирает ссылки из объявления и пересечений наследуемых свойств.</summary>
+    /// <param name="model">Проверяемая модель.</param>
+    /// <returns>Имена моделей, на которые есть ссылки.</returns>
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();
@@ -1182,10 +1182,10 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         AddValidationSchemaImports(result, operation, fileOrganization);
     }
 
-    /// <summary>Adds the validation imports needed by the operation's generated client.</summary>
-    /// <param name="result">The imports to extend.</param>
-    /// <param name="operation">The operation whose inputs and responses are validated.</param>
-    /// <param name="fileOrganization">The configured output paths.</param>
+    /// <summary>Добавляет импорты валидации, необходимые генерируемому клиенту операции.</summary>
+    /// <param name="result">Список импортов для дополнения.</param>
+    /// <param name="operation">Операция, входные данные и ответы которой проверяются.</param>
+    /// <param name="fileOrganization">Настроенные пути выходных файлов.</param>
     private void AddValidationSchemaImports(
         List<ImportNode> result,
         IrOperation operation,
