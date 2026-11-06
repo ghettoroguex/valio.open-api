@@ -108,11 +108,18 @@ See [NuGet setup](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publ
 
 npm needs an existing package before its trusted publisher can be configured.
 Bootstrap all six with a short-lived granular token restricted to `@val.io`,
-provided as `NPM_TOKEN`. Then configure **each** package:
+provided as `NPM_TOKEN`.
+
+The npm account must have two-factor authentication enabled before npm allows
+changes to the package's trusted publisher settings.
+
+Configure **each** package:
 
 - Provider GitHub Actions.
 - Owner `valio-projects`, repository `valio.open-api`.
 - Workflow filename `release.yml`, environment `production`.
+- Allowed actions: enable **Allow npm publish**; staged publishing alone does
+  not authorize this workflow's direct `npm publish` commands.
 
 The publish job uses GitHub-hosted runners, Node.js 24, npm 11 and
 `id-token: write`. npm does not support self-hosted trusted publishers.
@@ -150,7 +157,7 @@ Keep public PR jobs on GitHub-hosted runners; avoid the server's rootful socket.
 Check the Actions run and resulting registries, not just a local build:
 
 1. All required CI and web smoke jobs pass.
-2. All 17 NuGet packages and six public npm packages have the expected version.
+2. All 20 NuGet packages and six public npm packages have the expected version.
 3. Clean public-registry installations launch `valio --help`.
 4. GitHub Release contains the native archives and tool package.
 5. Pages home, translated pages and static assets return successfully.

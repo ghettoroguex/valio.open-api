@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Parsers</PackageId>
+    <Description>ValIO OpenAPI document parsers for JSON and YAML files, streams, and HTTP sources.</Description>
+    <PackageTags>valio;openapi;swagger;parser;json;yaml</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

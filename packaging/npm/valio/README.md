@@ -18,7 +18,7 @@ npm's optional dependencies — you don't need .NET installed.
 valio --help
 ```
 
-See the full guide and language matrix at <https://valio.dev>.
+See the full guide and language matrix at <https://valio-projects.github.io/valio.open-api/>.
 
 ## Alternative installs
 
