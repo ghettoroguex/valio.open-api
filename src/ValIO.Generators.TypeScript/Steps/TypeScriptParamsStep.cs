@@ -38,7 +38,7 @@ public sealed class TypeScriptParamsStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
-        var paramsBuilder = new TypeScriptParamsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType);
+        var paramsBuilder = new TypeScriptParamsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType, opts?.GenerateDefaultValues == true);
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 

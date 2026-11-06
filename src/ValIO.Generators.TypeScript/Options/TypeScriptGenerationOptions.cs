@@ -2,6 +2,10 @@ namespace ValIO.Generators.TypeScript.Options;
 
 public sealed class TypeScriptGenerationOptions
 {
+    /// <summary>Whether to export explicitly specified non-null OpenAPI defaults.</summary>
+    /// <value>False unless default-value constants are requested.</value>
+    public bool GenerateDefaultValues { get; set; }
+
     public List<string> Transports { get; set; } = ["fetch"];
     public string EnumFormat { get; set; } = "union";
     public string? ValidationLibrary { get; set; }

@@ -328,6 +328,14 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         if (constraintsDecl != null)
             declarations.Add(constraintsDecl);
         
+        if (_options?.GenerateDefaultValues == true)
+        {
+            var defaults = TypeScriptDefaultValues.Build($"{model.Name}DefaultValues",
+                model.Properties.Where(p => p.Constraints?.DefaultValue != null)
+                    .Select(p => (p.Name, System.Text.Json.JsonSerializer.SerializeToElement(p.Constraints!.DefaultValue))));
+            if (defaults != null) declarations.Add(defaults);
+        }
+
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
         var modelFileBase = _namingConverter.ToCamelCase(model.OriginalName);

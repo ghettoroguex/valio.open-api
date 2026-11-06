@@ -412,14 +412,16 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Извлекает значение по умолчанию
+    /// Extracts an OpenAPI default while treating the reader's JSON-null sentinel as null.
     /// </summary>
+    /// <param name="defaultValue">The source default node.</param>
+    /// <returns>The extracted value, or null for absent or explicit JSON null.</returns>
     private object? ExtractDefaultValue(JsonNode? defaultValue)
     {
-        if (defaultValue == null)
+        if (defaultValue == null || JsonNullSentinel.IsJsonNullSentinel(defaultValue))
             return null;
-        
-        // Извлекаем значение из JsonNode
+
+        // Preserve primitive and composite JSON values for language-specific rendering.
         return defaultValue switch
         {
             JsonValue jsonValue => jsonValue.GetValue<object>(),

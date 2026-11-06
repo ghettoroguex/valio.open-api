@@ -413,3 +413,7 @@ npm install zod
 См. файлы:
 - `valio.config.typescript.example.json` - полный пример конфигурации
 - `valio.config.example.json` - пример для C#
+
+### Explicit default values
+
+Set `options.generateDefaultValues` to `true` to export `{Model}DefaultValues` and `{Operation}RouteParamsDefaultValues` / `{Operation}QueryParamsDefaultValues` constants. Only explicitly specified non-null OpenAPI defaults are included; requiredness and nullability of generated types do not change. The option defaults to `false`. Validation constraint constants are generated independently when constraints exist.

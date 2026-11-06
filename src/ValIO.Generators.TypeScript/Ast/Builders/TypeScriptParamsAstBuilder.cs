@@ -21,20 +21,24 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
+    /// <summary>Controls emission of explicit parameter defaults.</summary>
+    private readonly bool _generateDefaultValues;
 
 
     /// <summary>Creates a TypeScriptParamsAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
     /// <param name="namingConverter">The generated identifier naming policy.</param>
     /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="generateDefaultValues">Whether to export explicit defaults.</param>
     /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
     public TypeScriptParamsAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
-        Func<IrType, TypeNode> typeBuilder)
+        Func<IrType, TypeNode> typeBuilder, bool generateDefaultValues = false)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+        _generateDefaultValues = generateDefaultValues;
     }
 
     /// <summary>
@@ -85,9 +89,12 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         };
     }
 
-    /// <summary>
-    /// Строит SourceFileNode с Params-интерфейсами для операции
-    /// </summary>
+    /// <summary>Builds parameter interfaces and their exported metadata for an operation.</summary>
+    /// <param name="operation">The operation whose parameters are generated.</param>
+    /// <param name="importPath">An optional import path override.</param>
+    /// <param name="fileOrganization">The generated file layout.</param>
+    /// <param name="currentOperationName">The current operation identifier.</param>
+    /// <returns>The source file containing the parameter declarations.</returns>
     public SourceFileNode BuildParamsSourceFile(
         IrOperation operation,
         string? importPath,
@@ -160,6 +167,18 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             TypeScriptDoc.Block($"Validation constraints for {operation.MethodName} query parameters (lengths, ranges, patterns).", ("constant", "")));
         if (queryConstraints != null)
             declarations.Add(queryConstraints);
+
+        if (_generateDefaultValues)
+        {
+            var routeDefaults = TypeScriptDefaultValues.Build($"{opName}RouteParamsDefaultValues",
+                operation.PathParameters.Where(p => p.DefaultValue != null)
+                    .Select(p => (p.Name, System.Text.Json.JsonSerializer.SerializeToElement(p.DefaultValue))));
+            var queryDefaults = TypeScriptDefaultValues.Build($"{opName}QueryParamsDefaultValues",
+                operation.QueryParameters.Where(p => p.DefaultValue != null)
+                    .Select(p => (p.Name, System.Text.Json.JsonSerializer.SerializeToElement(p.DefaultValue))));
+            if (routeDefaults != null) declarations.Add(routeDefaults);
+            if (queryDefaults != null) declarations.Add(queryDefaults);
+        }
 
         // Собираем все модели-зависимости: body/form (включая массивы и т.п.) +
         // route/query/header параметры. Дедупим по имени.
