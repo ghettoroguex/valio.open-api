@@ -91,7 +91,8 @@ public sealed class TypeScriptParameterModel
     /// </summary>
     public bool QueryMayBeUndefined { get; }
 
-    /// <summary>Whether the aggregate <c>params.headers</c> group may be <c>undefined</c> at runtime.</summary>
+    /// <summary>Whether every header is optional and its aggregate group may therefore be absent.</summary>
+    /// <value>Whether header access requires optional chaining.</value>
     public bool HeadersMayBeUndefined { get; }
 
     /// <summary>Whether the body/form group may be <c>undefined</c> at runtime (optional request body).</summary>
@@ -128,12 +129,18 @@ public sealed class TypeScriptParameterModel
             hasBody: hasBody,
             hasForm: hasForm,
             // In aggregate mode the `query` property is optional exactly when every query param is optional.
-            queryMayBeUndefined: hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(p.Type)),
-            // In aggregate mode the `headers` property is always optional.
-            headersMayBeUndefined: hasHeaders && !isFlat,
+            queryMayBeUndefined: hasQuery && !isFlat && operation.QueryParameters.All(IsOptional),
+            // A required wire header also requires the aggregate header group.
+            headersMayBeUndefined: hasHeaders && !isFlat && operation.HeaderParameters.All(IsOptional),
             bodyMayBeUndefined: (hasBody || hasForm) && requestBody is not null
                 && (!requestBody.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(requestBody.Type)));
     }
+
+    /// <summary>Determines whether a parameter can be omitted in the generated TypeScript contract.</summary>
+    /// <param name="parameter">The parameter whose declared presence and type are inspected.</param>
+    /// <returns>Whether the parameter may be undefined.</returns>
+    public static bool IsOptional(IrParameter parameter) =>
+        !parameter.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(parameter.Type);
 
     /// <summary>The root <c>params</c> expression (the whole params object).</summary>
     /// <returns>The <c>params</c> identifier expression.</returns>

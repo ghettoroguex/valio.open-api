@@ -17,15 +17,26 @@ public sealed class AngularServiceRenderer
 {
     private const int IndentSpaces = 4;
 
+    /// <summary>The configured validation expression renderer chain.</summary>
+    private readonly ITypeScriptNodeRenderer[] _nodeRenderers;
+
+    /// <summary>Creates an Angular class renderer with optional validation AST support.</summary>
+    /// <param name="nodeRenderers">The configured validation expression renderers.</param>
+    public AngularServiceRenderer(IEnumerable<ITypeScriptNodeRenderer>? nodeRenderers = null) =>
+        _nodeRenderers = nodeRenderers?.ToArray() ?? [];
+
     /// <summary>
     /// Renders the class declaration as a TypeScript snippet (no leading imports).
     /// </summary>
+    /// <param name="node">The Angular service declaration.</param>
+    /// <returns>The rendered injectable service.</returns>
+    /// <exception cref="ArgumentNullException">The declaration is null.</exception>
     public string Render(AngularServiceClassNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
 
         var sb = new StringBuilder();
-        var inner = new TypeScriptAstRenderer();
+        var inner = new TypeScriptAstRenderer(_nodeRenderers);
 
         // JSDoc
         if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))

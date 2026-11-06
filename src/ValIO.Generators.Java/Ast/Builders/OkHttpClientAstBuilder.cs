@@ -13,19 +13,28 @@ using ValIO.Generators.Java.Ast.Nodes;
 namespace ValIO.Generators.Java.Ast.Builders;
 
 /// <summary>
-/// Строит <see cref="JavaSourceFileNode"/> с OkHttp-клиентом для одного IR <see cref="IrClient"/>.
+/// Builds a typed OkHttp client using caller-owned HTTP and JSON pipelines.
 /// </summary>
 public sealed class OkHttpClientAstBuilder
 {
+    /// <summary>Converts operation and parameter identifiers to Java naming conventions.</summary>
     private readonly INamingConverter _namingConverter;
+    /// <summary>Maps shared IR payloads to Java types.</summary>
     private readonly JavaIrTypeMapper _typeMapper;
 
+    /// <summary>Creates a client builder with shared naming and type mapping services.</summary>
+    /// <param name="namingConverter">The Java identifier converter.</param>
+    /// <param name="typeMapper">The Java type mapper.</param>
     public OkHttpClientAstBuilder(INamingConverter namingConverter, JavaIrTypeMapper typeMapper)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
     }
 
+    /// <summary>Builds a client whose injected OkHttpClient retains interceptors, authentication and connection pooling.</summary>
+    /// <param name="client">The operation group.</param>
+    /// <param name="rootPackage">The root Java package.</param>
+    /// <returns>The generated source AST.</returns>
     public JavaSourceFileNode BuildSourceFile(IrClient client, string rootPackage)
     {
         var pkg = NormalizePackage($"{rootPackage}.api");
@@ -39,6 +48,8 @@ public sealed class OkHttpClientAstBuilder
             "okhttp3.Request",
             "okhttp3.Response",
             "java.io.IOException",
+            "java.util.function.Consumer",
+            "okhttp3.Call",
         };
         var modelsPackage = NormalizePackage($"{rootPackage}.models");
 
@@ -80,6 +91,7 @@ public sealed class OkHttpClientAstBuilder
         foreach (var op in client.Operations)
         {
             methods.Add(BuildOperationMethod(op, importTargets, modelsPackage));
+            methods.Add(BuildOperationMethod(op, importTargets, modelsPackage, exposeCall: true));
         }
 
         var cls = new JavaClassDeclarationNode(
@@ -99,7 +111,13 @@ public sealed class OkHttpClientAstBuilder
             declarations: new DeclarationNode[] { cls }.ToImmutableList());
     }
 
-    private MethodDeclarationNode BuildOperationMethod(IrOperation op, ISet<string> importTargets, string modelsPackage)
+    /// <summary>Builds one operation with checked HTTP status and typed JSON deserialization.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="importTargets">The imports accumulated for this source file.</param>
+    /// <param name="modelsPackage">The generated declaration package.</param>
+    /// <param name="exposeCall">Whether a callback exposes the native Call before transport execution for cancellation.</param>
+    /// <returns>The generated method declaration.</returns>
+    private MethodDeclarationNode BuildOperationMethod(IrOperation op, ISet<string> importTargets, string modelsPackage, bool exposeCall = false)
     {
         var methodName = _namingConverter.ToCamelCase(op.MethodName);
 
@@ -114,15 +132,17 @@ public sealed class OkHttpClientAstBuilder
         {
             var bodyType = _typeMapper.MapType(op.RequestBody.Type, preferUnboxed: false);
             foreach (var im in _typeMapper.CollectImports(op.RequestBody.Type)) importTargets.Add(im);
-            if (op.RequestBody.Type is IrModelReference bodyRef)
-                importTargets.Add($"{modelsPackage}.{bodyRef.ModelName}");
+            CollectModelImports(op.RequestBody.Type, importTargets, modelsPackage);
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("body"),
                 type: bodyType,
                 isRequired: op.RequestBody.IsRequired));
         }
 
-        var returnType = ResolveReturnType(op, importTargets, modelsPackage, out var returnModelName);
+        var returnType = ResolveReturnType(op, importTargets, modelsPackage, out var returnTypeToken);
+        if (exposeCall)
+            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("callReady"),
+                new GenericTypeNode(new IdentifierNode("Consumer"), [new SimpleTypeNode(new IdentifierNode("Call"))])));
 
         var statements = new List<StatementNode>();
 
@@ -150,13 +170,45 @@ public sealed class OkHttpClientAstBuilder
                     arguments: new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("request")) }),
                 member: new IdentifierNode("execute")),
             arguments: ImmutableList<ExpressionNode>.Empty);
-        var responseResource = $"Response response = {ExpressionToString(responseInitExpr)}";
-
-        var tryStatements = new List<StatementNode>();
-        if (returnType != null && returnModelName != null)
+        if (exposeCall)
         {
-            // return mapper.readValue(response.body().byteStream(), ReturnType.class);
-            var classLiteral = new IdentifierExpressionNode(new IdentifierNode(returnModelName + ".class"));
+            statements.Add(new VariableDeclarationStatementNode(new IdentifierNode("call"),
+                new SimpleTypeNode(new IdentifierNode("Call")),
+                new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("client")), new IdentifierNode("newCall")),
+                    [new IdentifierExpressionNode(new IdentifierNode("request"))])));
+            statements.Add(new IfStatementNode(new BinaryExpressionNode(new IdentifierExpressionNode(new IdentifierNode("callReady")),
+                BinaryOperator.NotEqual, new LiteralExpressionNode(null, LiteralKind.Null)), new BlockNode([
+                    new ExpressionStatementNode(new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("callReady")), new IdentifierNode("accept")),
+                        [new IdentifierExpressionNode(new IdentifierNode("call"))])),
+                ])));
+            statements.Add(new IfStatementNode(new CallExpressionNode(new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("call")), new IdentifierNode("isCanceled"))), new BlockNode([
+                    new ThrowStatementNode(new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode("IOException")),
+                        [new LiteralExpressionNode("Canceled", LiteralKind.String)], isNewExpression: true)),
+                ])));
+        }
+        var responseResource = exposeCall ? "Response response = call.execute()" : $"Response response = {ExpressionToString(responseInitExpr)}";
+
+        var status = new CallExpressionNode(new MemberAccessExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("response")), new IdentifierNode("isSuccessful")));
+        var tryStatements = new List<StatementNode>
+        {
+            new IfStatementNode(new BinaryExpressionNode(status, BinaryOperator.Equal,
+                new LiteralExpressionNode(false, LiteralKind.Boolean)), new BlockNode([
+                    new ThrowStatementNode(new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode("IOException")),
+                        [new BinaryExpressionNode(new LiteralExpressionNode("HTTP ", LiteralKind.String), BinaryOperator.Add,
+                            new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("response")), new IdentifierNode("code"))))],
+                        isNewExpression: true)),
+                ])),
+        };
+        if (returnTypeToken != null)
+        {
+            tryStatements.Add(new IfStatementNode(new BinaryExpressionNode(
+                new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("response")), new IdentifierNode("body"))),
+                BinaryOperator.Equal, new LiteralExpressionNode(null, LiteralKind.Null)), new BlockNode([
+                    new ThrowStatementNode(new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode("IOException")),
+                        [new LiteralExpressionNode("The successful HTTP response did not contain a payload.", LiteralKind.String)], isNewExpression: true)),
+                ])));
             var readValueCall = new CallExpressionNode(
                 target: new MemberAccessExpressionNode(
                     @object: new IdentifierExpressionNode(new IdentifierNode("mapper")),
@@ -172,7 +224,7 @@ public sealed class OkHttpClientAstBuilder
                                 arguments: ImmutableList<ExpressionNode>.Empty),
                             member: new IdentifierNode("byteStream")),
                         arguments: ImmutableList<ExpressionNode>.Empty),
-                    classLiteral,
+                    returnTypeToken,
                 });
             tryStatements.Add(new ReturnStatementNode(readValueCall));
         }
@@ -203,6 +255,8 @@ public sealed class OkHttpClientAstBuilder
             if (docLines.Count > 0) docLines.Add("");
             docLines.Add(op.Description!);
         }
+        if (exposeCall)
+            docLines.Add("The callReady callback receives the native OkHttp Call before sending; retain it and invoke cancel() to abort this request. The injected client retains its interceptors and authenticator.");
         var doc = docLines.Count > 0 ? new CommentNode(string.Join("\n", docLines), CommentKind.MultiLine) : null;
 
         var methodMetadata = new Dictionary<string, object>
@@ -220,12 +274,16 @@ public sealed class OkHttpClientAstBuilder
             metadata: methodMetadata);
     }
 
+    /// <summary>Builds a Java method parameter and its recursive declaration imports.</summary>
+    /// <param name="p">The source parameter.</param>
+    /// <param name="importTargets">The source file imports.</param>
+    /// <param name="modelsPackage">The generated declaration package.</param>
+    /// <returns>The mapped method parameter.</returns>
     private ParameterDeclarationNode BuildParam(IrParameter p, ISet<string> importTargets, string modelsPackage)
     {
         var typeNode = _typeMapper.MapType(p.Type, preferUnboxed: p.IsRequired);
         foreach (var im in _typeMapper.CollectImports(p.Type)) importTargets.Add(im);
-        if (p.Type is IrModelReference modelRef)
-            importTargets.Add($"{modelsPackage}.{modelRef.ModelName}");
+        CollectModelImports(p.Type, importTargets, modelsPackage);
         var name = _namingConverter.ToCamelCase(p.Name);
         if (JavaReservedWords.Reserved.Contains(name)) name += "_";
         return new ParameterDeclarationNode(
@@ -234,12 +292,18 @@ public sealed class OkHttpClientAstBuilder
             isRequired: p.IsRequired);
     }
 
-    private TypeNode? ResolveReturnType(IrOperation op, ISet<string> importTargets, string modelsPackage, out string? returnClassToken)
+    /// <summary>Resolves the success payload without erasing generic collection element types.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="importTargets">The source file imports.</param>
+    /// <param name="modelsPackage">The generated declaration package.</param>
+    /// <param name="returnClassToken">The Jackson class or JavaType expression used for deserialization.</param>
+    /// <returns>The Java payload type or void.</returns>
+    private TypeNode? ResolveReturnType(IrOperation op, ISet<string> importTargets, string modelsPackage, out ExpressionNode? returnClassToken)
     {
         returnClassToken = null;
         // Pick the first 2xx success response with a payload; else void.
         var success = op.Responses.FirstOrDefault(r =>
-            int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300 && r.Type != null);
+            (int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300 || r.StatusCode == "2XX") && r.Type != null);
         if (success?.Type == null)
         {
             return new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true);
@@ -248,37 +312,73 @@ public sealed class OkHttpClientAstBuilder
         var typeNode = _typeMapper.MapType(success.Type, preferUnboxed: false);
         foreach (var im in _typeMapper.CollectImports(success.Type)) importTargets.Add(im);
 
-        // For model references, we know the class symbol; emit Type.class.
-        if (success.Type is IrModelReference modelRef)
-        {
-            importTargets.Add($"{modelsPackage}.{modelRef.ModelName}");
-            returnClassToken = modelRef.ModelName;
-        }
-        else if (typeNode is SimpleTypeNode simple)
-        {
-            // Primitive boxed: still mapper-readable with Boxed.class.
-            returnClassToken = simple.Name.Name;
-        }
-        else if (typeNode is GenericTypeNode)
-        {
-            // Generic (List<X>, Map<K, V>): use Object.class fallback — caller can override.
-            returnClassToken = "Object";
-        }
+        CollectModelImports(success.Type, importTargets, modelsPackage);
+        returnClassToken = typeNode is SimpleTypeNode simple
+            ? new IdentifierExpressionNode(new IdentifierNode(simple.Name.Name + ".class"))
+            : BuildJacksonType(typeNode);
 
         return typeNode;
     }
 
+    /// <summary>Builds a Jackson JavaType recursively so list and map payloads remain typed.</summary>
+    /// <param name="type">The mapped Java type.</param>
+    /// <returns>The runtime Jackson type descriptor.</returns>
+    private static ExpressionNode BuildJacksonType(TypeNode type)
+    {
+        var factory = new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("mapper")), new IdentifierNode("getTypeFactory")));
+        if (type is GenericTypeNode generic)
+        {
+            var arguments = new List<ExpressionNode> { new IdentifierExpressionNode(new IdentifierNode(generic.Name.Name + ".class")) };
+            arguments.AddRange(generic.TypeArguments.Select(BuildJacksonType));
+            return new CallExpressionNode(new MemberAccessExpressionNode(factory, new IdentifierNode("constructParametricType")), arguments);
+        }
+        if (type is SimpleTypeNode simple)
+            return new CallExpressionNode(new MemberAccessExpressionNode(factory, new IdentifierNode("constructType")),
+                [new IdentifierExpressionNode(new IdentifierNode(simple.Name.Name + ".class"))]);
+        throw new NotSupportedException($"Java response type '{type.GetType().Name}' cannot be deserialized safely.");
+    }
+
+    /// <summary>Collects declaration imports nested in optional values and containers.</summary>
+    /// <param name="type">The IR type to inspect.</param>
+    /// <param name="imports">The source file imports.</param>
+    /// <param name="package">The generated declaration package.</param>
+    private static void CollectModelImports(IrType type, ISet<string> imports, string package)
+    {
+        switch (type)
+        {
+            case IrModelReference reference: imports.Add($"{package}.{reference.ModelName}"); break;
+            case IrArrayType array: CollectModelImports(array.ElementType, imports, package); break;
+            case IrDictionaryType dictionary:
+                CollectModelImports(dictionary.KeyType, imports, package);
+                CollectModelImports(dictionary.ValueType, imports, package);
+                break;
+            case IrNullableType nullable: CollectModelImports(nullable.InnerType, imports, package); break;
+            case IrOptionalType optional: CollectModelImports(optional.InnerType, imports, package); break;
+        }
+    }
+
+    /// <summary>Builds a member access to a generated client field.</summary>
+    /// <param name="field">The field identifier.</param>
+    /// <returns>The this-qualified field expression.</returns>
     private static MemberAccessExpressionNode BuildThis(string field) =>
         new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode("this")),
             member: new IdentifierNode(field));
 
+    /// <summary>Builds a constructor assignment to an injected dependency.</summary>
+    /// <param name="field">The destination field.</param>
+    /// <param name="value">The constructor parameter.</param>
+    /// <returns>The assignment expression.</returns>
     private static BinaryExpressionNode AssignThis(string field, string value) =>
         new BinaryExpressionNode(
             left: BuildThis(field),
             @operator: BinaryOperator.Assign,
             right: new IdentifierExpressionNode(new IdentifierNode(value)));
 
+    /// <summary>Builds the request URL while preserving original query names.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="parameters">The mapped operation parameters.</param>
+    /// <returns>The final HttpUrl expression.</returns>
     private ExpressionNode BuildUrlExpression(IrOperation op, IReadOnlyList<ParameterDeclarationNode> parameters)
     {
         // baseUrl.newBuilder().addPathSegments(<path expr>).addQueryParameter(...)...build()
@@ -288,11 +388,12 @@ public sealed class OkHttpClientAstBuilder
                 member: new IdentifierNode("newBuilder")),
             arguments: ImmutableList<ExpressionNode>.Empty);
 
-        chain = new CallExpressionNode(
-            target: new MemberAccessExpressionNode(
-                @object: chain,
-                member: new IdentifierNode("addPathSegments")),
-            arguments: new ExpressionNode[] { BuildPathExpression(op) });
+        foreach (var segment in op.Path.TrimStart('/').Split('/'))
+        {
+            chain = new CallExpressionNode(
+                new MemberAccessExpressionNode(chain, new IdentifierNode("addPathSegment")),
+                [BuildPathExpression(op with { Path = segment })]);
+        }
 
         foreach (var q in op.QueryParameters)
         {
@@ -308,15 +409,18 @@ public sealed class OkHttpClientAstBuilder
                         member: new IdentifierNode("valueOf")),
                     arguments: new ExpressionNode[] { valueExpr });
             }
-            chain = new CallExpressionNode(
+            var withQuery = new CallExpressionNode(
                 target: new MemberAccessExpressionNode(
                     @object: chain,
                     member: new IdentifierNode("addQueryParameter")),
                 arguments: new ExpressionNode[]
                 {
-                    new LiteralExpressionNode(q.Name, LiteralKind.String),
+                    new LiteralExpressionNode(q.OriginalName, LiteralKind.String),
                     valueExpr,
                 });
+            chain = q.IsRequired ? withQuery : new ConditionalExpressionNode(
+                new BinaryExpressionNode(new IdentifierExpressionNode(new IdentifierNode(paramName)), BinaryOperator.Equal,
+                    new LiteralExpressionNode(null, LiteralKind.Null)), chain, withQuery);
         }
 
         chain = new CallExpressionNode(
@@ -328,6 +432,9 @@ public sealed class OkHttpClientAstBuilder
         return chain;
     }
 
+    /// <summary>Builds an operation path from literal fragments and declared path parameters.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <returns>The Java path expression.</returns>
     private ExpressionNode BuildPathExpression(IrOperation op)
     {
         // Build a Java string concatenation expression of literal segments and path params.
@@ -353,7 +460,8 @@ public sealed class OkHttpClientAstBuilder
                 var end = path.IndexOf('}', i);
                 if (end < 0) { sb.Append(path[i++]); continue; }
                 var paramName = path.Substring(i + 1, end - i - 1);
-                var sanitized = _namingConverter.ToCamelCase(paramName);
+                var parameter = op.PathParameters.FirstOrDefault(candidate => candidate.OriginalName == paramName);
+                var sanitized = _namingConverter.ToCamelCase(parameter?.Name ?? paramName);
                 if (JavaReservedWords.Reserved.Contains(sanitized)) sanitized += "_";
                 // Wrap with String.valueOf(...) to support any param type.
                 parts.Add(new CallExpressionNode(
@@ -385,6 +493,10 @@ public sealed class OkHttpClientAstBuilder
         return current;
     }
 
+    /// <summary>Builds a request with a real JSON body or an empty body required by the HTTP verb.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="hasBody">Whether an explicit source request payload exists.</param>
+    /// <returns>The built OkHttp request.</returns>
     private ExpressionNode BuildRequestExpression(IrOperation op, bool hasBody)
     {
         // new Request.Builder().url(url).{method}(body|nothing).build()
@@ -415,9 +527,7 @@ public sealed class OkHttpClientAstBuilder
                 // For POST/PUT/PATCH: pass a RequestBody if provided, else use empty body.
                 if (hasBody)
                 {
-                    // RequestBody.create(mapper.writeValueAsBytes(body), null)  — but Body is omitted from imports
-                    // for now to keep generated code self-contained. We pass a placeholder body via okhttp's
-                    // RequestBody.create with null media type and an empty byte array as fallback.
+                    // The injected ObjectMapper serializes the actual request payload.
                     chain = new CallExpressionNode(
                         target: new MemberAccessExpressionNode(
                             @object: chain,
@@ -438,7 +548,8 @@ public sealed class OkHttpClientAstBuilder
                                         {
                                             new IdentifierExpressionNode(new IdentifierNode("body")),
                                         }),
-                                    new LiteralExpressionNode(null, LiteralKind.Null),
+                                    new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("okhttp3.MediaType")), new IdentifierNode("get")),
+                                        [new LiteralExpressionNode("application/json", LiteralKind.String)]),
                                 }),
                         });
                 }
@@ -456,9 +567,7 @@ public sealed class OkHttpClientAstBuilder
                                     member: new IdentifierNode("create")),
                                 arguments: new ExpressionNode[]
                                 {
-                                    new CallExpressionNode(
-                                        target: new IdentifierExpressionNode(new IdentifierNode("new byte[0]")),
-                                        arguments: ImmutableList<ExpressionNode>.Empty),
+                                    new LiteralExpressionNode(string.Empty, LiteralKind.String),
                                     new LiteralExpressionNode(null, LiteralKind.Null),
                                 }),
                         });
@@ -466,6 +575,17 @@ public sealed class OkHttpClientAstBuilder
                 break;
         }
 
+        foreach (var header in op.HeaderParameters)
+        {
+            var name = _namingConverter.ToCamelCase(header.Name);
+            if (JavaReservedWords.Reserved.Contains(name)) name += "_";
+            var value = new IdentifierExpressionNode(new IdentifierNode(name));
+            var withHeader = new CallExpressionNode(new MemberAccessExpressionNode(chain, new IdentifierNode("header")),
+                [new LiteralExpressionNode(header.OriginalName, LiteralKind.String),
+                    new CallExpressionNode(new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("String")), new IdentifierNode("valueOf")), [value])]);
+            chain = header.IsRequired ? withHeader : new ConditionalExpressionNode(
+                new BinaryExpressionNode(value, BinaryOperator.Equal, new LiteralExpressionNode(null, LiteralKind.Null)), chain, withHeader);
+        }
         chain = new CallExpressionNode(
             target: new MemberAccessExpressionNode(
                 @object: chain,
@@ -475,6 +595,9 @@ public sealed class OkHttpClientAstBuilder
         return chain;
     }
 
+    /// <summary>Determines whether a query value can be passed directly as a string.</summary>
+    /// <param name="t">The source query type.</param>
+    /// <returns>Whether the unwrapped value is a string.</returns>
     private static bool IsStringType(IrType t) => t switch
     {
         IrPrimitiveType p => p.PrimitiveKind == ValIO.Core.IR.Enums.IrPrimitiveKind.String,
@@ -483,8 +606,14 @@ public sealed class OkHttpClientAstBuilder
         _ => false,
     };
 
+    /// <summary>Normalizes a configured package into Java dotted notation.</summary>
+    /// <param name="pkg">The configured package.</param>
+    /// <returns>The normalized package.</returns>
     private static string NormalizePackage(string pkg) => pkg.Trim('.').Replace('/', '.');
 
+    /// <summary>Derives a stable public Java client class name.</summary>
+    /// <param name="clientName">The source operation group.</param>
+    /// <returns>The generated public class identifier.</returns>
     private static string BuildClassName(string clientName)
     {
         if (string.IsNullOrWhiteSpace(clientName)) return "ApiClient";
@@ -493,6 +622,9 @@ public sealed class OkHttpClientAstBuilder
             : clientName + "Api";
     }
 
+    /// <summary>Formats the restricted expression subset supported by try-with-resources metadata.</summary>
+    /// <param name="node">The resource initializer expression.</param>
+    /// <returns>The resource initializer source text.</returns>
     private string ExpressionToString(ExpressionNode node)
     {
         // Limited inline visitor used only when generating try-with-resources source line.

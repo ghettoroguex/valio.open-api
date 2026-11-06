@@ -5,9 +5,9 @@
 [![CI](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml)
 [![Release](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml)
 [![NuGet](https://img.shields.io/nuget/v/ValIO.Cli.svg)](https://www.nuget.org/packages/ValIO.Cli)
-[![npm](https://img.shields.io/npm/v/@valio-projects/valio.svg)](https://www.npmjs.com/package/@valio-projects/valio)
+[![npm](https://img.shields.io/npm/v/@val.io/valio.svg)](https://www.npmjs.com/package/@val.io/valio)
 [![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL_v2.1-blue.svg)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-valio.dev-blue)](https://valio.dev)
+[![Docs](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://valio-projects.github.io/valio.open-api/)
 
 ## Quick start
 
@@ -21,7 +21,7 @@ valio generate -s ./openapi.yaml -o ./out -l typescript
 Install via npm:
 
 ```bash
-npm install -g @valio-projects/valio
+npm install -g @val.io/valio
 valio generate -s ./openapi.yaml -o ./out -l typescript
 ```
 
@@ -50,7 +50,7 @@ dotnet run --project src/ValIO.Cli -- generate -s ./openapi.yaml -o ./out -l typ
 | Kotlin     | OkHttp                                                                    | None                          | Kotlinx.Serialization                |
 | Python     | httpx                                                                     | Pydantic                      | async/sync                           |
 | PHP        | Guzzle                                                                    | None                          | PSR-7                                |
-| C++        | Unreal HTTP                                                               | None                          | UE plugin shape                      |
+| C++        | Unreal HTTP / cpp-httplib                                                 | None                          | `runtime: ue` (default) \| `std`: nlohmann_json, JSON-free model headers, C++17/20/23 |
 | Swift      | URLSession                                                                | Codable                       | iOS/macOS                            |
 | Rust       | Reqwest                                                                   | Serde                         | tokio                                |
 | Ruby       | Faraday                                                                   | None                          | Ruby 3+                              |
@@ -151,7 +151,12 @@ ValIO.sln
 
 ## Documentation
 
-Full documentation lives at <https://valio.dev>.
+Full documentation lives at <https://valio-projects.github.io/valio.open-api/>.
+
+Stable releases from `main` publish the .NET tool and libraries to NuGet, the
+CLI to npm, and the web image to `ghcr.io/valio-projects/valio-web`. See
+[CI/CD](docs/CI_CD.md) for release setup and
+[web deployment](deploy/web/README.md) for the optional Docker Compose host.
 
 To run the docs locally:
 

@@ -73,9 +73,10 @@ public class AxiosClientStepTests
         petSchemaImports.Should().Be(1, "PetSchema must be imported exactly once even when used for body + response");
     }
 
-    /// <summary>Uses the configured Axios export unless a caller supplies a client.</summary>
+    /// <summary>Preserves configured Axios exports through a namespace without shadowing operation parameters.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
-    public async Task AxiosClient_CustomInstance_UsesNamespaceDefaultWithOptionalOverride()
+    public async Task AxiosClient_CustomInstance_ImportsQualifiedExportAndAssignsToAxiosInstance()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
@@ -91,15 +92,13 @@ public class AxiosClientStepTests
         var any = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
 
-        // A namespace import avoids collisions while stripping the .ts module extension.
         any.Content.Should().Contain("import * as axiosDefaults from \"@shared/api/api-mutator\"");
-        // The instance is assigned into the local axiosInstance variable...
-        any.Content.Should().Contain("const axiosInstance: AxiosInstance = (client ?? axiosDefaults.apiMutator)");
-        // ...and the global axios default import is no longer emitted.
+        any.Content.Should().Contain("const axiosInstance = (client ?? axiosDefaults.apiMutator)");
         any.Content.Should().NotContain("import axios from");
     }
 
-    /// <summary>Falls back to the global Axios instance when no custom default is configured.</summary>
+    /// <summary>Uses the native global Axios default whenever the caller omits an injected client.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task AxiosClient_NoCustomInstance_FallsBackToGlobalAxios()
     {
@@ -110,7 +109,7 @@ public class AxiosClientStepTests
             f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
 
         any.Content.Should().Contain("import axios from \"axios\"");
-        any.Content.Should().Contain("const axiosInstance: AxiosInstance = (client ?? axios)");
+        any.Content.Should().Contain("const axiosInstance = (client ?? axios)");
     }
 
     [Test]

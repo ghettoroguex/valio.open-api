@@ -1,0 +1,37 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Headers",
+    "version": "1"
+  },
+  "paths": {
+    "/items/{id}": {
+      "get": {
+        "operationId": "GetItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    }
+  }
+}

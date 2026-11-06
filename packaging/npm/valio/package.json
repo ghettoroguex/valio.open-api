@@ -1,5 +1,5 @@
 {
-  "name": "@valio-projects/valio",
+  "name": "@val.io/valio",
   "version": "0.1.0",
   "description": "OpenAPI to type-safe HTTP clients for 12 languages — CLI wrapper.",
   "bin": {
@@ -17,15 +17,11 @@
     "node": ">=18.0.0"
   },
   "optionalDependencies": {
-    "@valio-projects/cli-win32-x64": "0.1.0",
-    "@valio-projects/cli-linux-x64": "0.1.0",
-    "@valio-projects/cli-linux-arm64": "0.1.0",
-    "@valio-projects/cli-darwin-x64": "0.1.0",
-    "@valio-projects/cli-darwin-arm64": "0.1.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "@val.io/cli-win32-x64": "0.1.0",
+    "@val.io/cli-linux-x64": "0.1.0",
+    "@val.io/cli-linux-arm64": "0.1.0",
+    "@val.io/cli-darwin-x64": "0.1.0",
+    "@val.io/cli-darwin-arm64": "0.1.0"
   },
   "files": [
     "dist/",
@@ -33,7 +29,7 @@
     "LICENSE"
   ],
   "license": "LGPL-2.1-only",
-  "homepage": "https://valio.dev",
+  "homepage": "https://valio-projects.github.io/valio.open-api/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/valio-projects/valio.open-api.git",

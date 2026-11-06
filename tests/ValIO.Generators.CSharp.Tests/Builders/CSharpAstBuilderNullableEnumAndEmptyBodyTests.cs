@@ -26,10 +26,17 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
     private CSharpAstBuilder _builder = null!;
     private CSharpAstRenderer _renderer = null!;
 
+    /// <summary>Creates a renderer and a builder with the explicit fragment document context.</summary>
     [SetUp]
     public void Setup()
     {
-        _builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        _builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context(
+            [new IrModel { Name = "PropertyObjectPaybackModel", Properties = [] }],
+            [new IrEnum
+            {
+                Name = "PropertyObjectAvailabilityStatus", BaseType = IrEnumBaseType.String,
+                Values = [new IrEnumValue { Name = "Available", Value = "available" }]
+            }]));
         _renderer = new CSharpAstRenderer();
     }
 
@@ -44,8 +51,6 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
     [Test]
     public void OptionalEnumRefProperty_IsNullable()
     {
-        _builder.EnumNames = new HashSet<string>(System.StringComparer.Ordinal) { "PropertyObjectAvailabilityStatus" };
-
         var code = _renderer.Render(_builder.BuildProperty(EnumProperty(isRequired: false)));
 
         code.Should().Contain("public PropertyObjectAvailabilityStatus? propertyObjectStatus { get; set; }");
@@ -56,8 +61,6 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
     [Test]
     public void RequiredEnumRefProperty_StaysNonNullable()
     {
-        _builder.EnumNames = new HashSet<string>(System.StringComparer.Ordinal) { "PropertyObjectAvailabilityStatus" };
-
         var code = _renderer.Render(_builder.BuildProperty(EnumProperty(isRequired: true)));
 
         code.Should().Contain("public PropertyObjectAvailabilityStatus propertyObjectStatus");
@@ -69,8 +72,6 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
     {
         // $ref на МОДЕЛЬ (reference-type) — не enum: null присваивается штатно, поэтому обёртку в
         // nullable не навязываем (это изменило бы контракт множества клиентов без необходимости).
-        _builder.EnumNames = new HashSet<string>(System.StringComparer.Ordinal) { "PropertyObjectAvailabilityStatus" };
-
         var property = new IrProperty
         {
             OriginalName = "payback",
@@ -128,5 +129,29 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
             .Matches(code, @"if \(string\.IsNullOrWhiteSpace\(responseContent\)\)")
             .Count.Should().BeGreaterThanOrEqualTo(2);
         code.Should().Contain("throw new ApiException");
+    }
+
+    /// <summary>
+    /// Verifies that multipart operations delegate to the multipart content factory instead of emitting JSON.
+    /// </summary>
+    [Test]
+    public void MultipartBody_UsesMultipartFactoryInsteadOfJsonSerialization()
+    {
+        var operation = OperationWith(new IrResponse { StatusCode = "204" }) with
+        {
+            HttpMethod = "POST",
+            RequestBody = new IrRequestBody
+            {
+                Type = new IrModelReference { ModelName = "ReplaceLogoForm" },
+                IsRequired = true,
+                ContentType = "multipart/form-data",
+            },
+        };
+
+        var code = _renderer.Render(_builder.BuildMethod(operation));
+
+        code.Should().Contain("MultipartFormDataContentFactory.Create(request)");
+        code.Should().NotContain("JsonSerializer.Serialize(request)");
+        code.Should().NotContain("new StringContent(requestJsonContent");
     }
 }

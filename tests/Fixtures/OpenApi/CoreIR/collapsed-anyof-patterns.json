@@ -1,0 +1,26 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "collapsed-anyof-patterns.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "ConstraintContainer": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "pattern": "z$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^a"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

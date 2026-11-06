@@ -1,3 +1,4 @@
+using ValIO.Generators.TypeScript.Tests.TestHelpers;
 using System.Collections.Immutable;
 using FluentAssertions;
 using NUnit.Framework;
@@ -26,7 +27,7 @@ public class TypeScriptParamsAstBuilderTests
     public void Setup()
     {
         var mapper = new TypeScriptIrTypeMapper();
-        _sut = new TypeScriptParamsAstBuilder(_namingConverter, mapper.MapType);
+        _sut = new TypeScriptParamsAstBuilder(IrDocumentContexts.Create(), _namingConverter, mapper.MapType);
     }
 
     private static IrPrimitiveType Prim(IrPrimitiveKind k) => new() { PrimitiveKind = k };

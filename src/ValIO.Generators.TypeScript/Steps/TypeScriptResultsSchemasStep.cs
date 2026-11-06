@@ -45,7 +45,7 @@ public sealed class TypeScriptResultsSchemasStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var validation = ClientValidationStrategyFactory.Create(opts);
-        var builder = new TypeScriptResultsSchemasAstBuilder(_namingConverter, validation, opts?.UuidFormat);
+        var builder = new TypeScriptResultsSchemasAstBuilder(context.DocumentContext, _namingConverter, validation, opts?.UuidFormat);
 
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";

@@ -23,10 +23,12 @@ public sealed class UndiciClientStep : TypeScriptClientStepBase
     public UndiciClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
         : base(namingConverter, nodeRenderers) { }
 
+    /// <inheritdoc />
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
-        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
+        IrDocumentContext documentContext, IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        var builder = new UndiciClientAstBuilder(NamingConverter, options);
+        var builder = new UndiciClientAstBuilder(documentContext, NamingConverter, options);
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

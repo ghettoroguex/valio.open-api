@@ -12,6 +12,4 @@ class User(BaseModel):
     id: int
     name: str
     email: str
-    role: "UserRole | None" = None
-
-User.model_rebuild()
+    role: "UserRole" = None

@@ -1,0 +1,82 @@
+{
+  "openapi": "3.1.2",
+  "info": { "title": "Optional C++ request bodies", "version": "1.0.0" },
+  "tags": [{ "name": "OptionalBodies" }],
+  "paths": {
+    "/optional/json": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostOptionalObject",
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OptionalPayload" } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    },
+    "/optional/nullable-json": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostOptionalNullable",
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "anyOf": [{ "$ref": "#/components/schemas/OptionalPayload" }, { "type": "null" }] } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    },
+    "/optional/required-nullable": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostRequiredNullable",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "anyOf": [{ "$ref": "#/components/schemas/OptionalPayload" }, { "type": "null" }] } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    },
+    "/optional/form": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostOptionalForm",
+        "requestBody": {
+          "required": false,
+          "content": { "application/x-www-form-urlencoded": { "schema": { "$ref": "#/components/schemas/OptionalPayload" } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    },
+    "/optional/multipart": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostOptionalMultipart",
+        "requestBody": {
+          "required": false,
+          "content": { "multipart/form-data": { "schema": { "$ref": "#/components/schemas/OptionalPayload" } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    },
+    "/optional/binary": {
+      "post": {
+        "tags": ["OptionalBodies"],
+        "operationId": "PostOptionalBinary",
+        "requestBody": {
+          "required": false,
+          "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+        },
+        "responses": { "200": { "description": "Wire request accepted", "content": { "application/json": { "schema": { "type": "boolean" } } } } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OptionalPayload": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" }, "note": { "type": "string" } }
+      }
+    }
+  }
+}

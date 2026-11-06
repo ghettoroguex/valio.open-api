@@ -25,9 +25,9 @@ public sealed class UEEnumAstBuilder
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
-    /// <summary>
-    /// Строит CppHeaderFileNode из IrEnum
-    /// </summary>
+    /// <summary>Builds an Unreal enum header with documentation even when schema prose is absent.</summary>
+    /// <param name="irEnum">The enum declaration to emit.</param>
+    /// <returns>The generated Unreal enum header AST.</returns>
     public CppHeaderFileNode Build(IrEnum irEnum)
     {
         var enumName = _naming.EnumName(irEnum.Name);
@@ -50,9 +50,7 @@ public sealed class UEEnumAstBuilder
             underlyingType: underlyingType,
             values: values,
             category: category,
-            documentation: !string.IsNullOrWhiteSpace(irEnum.Description)
-                ? new CommentNode(irEnum.Description, CommentKind.MultiLine)
-                : null);
+            documentation: StdDocumentation.Create($"{irEnum.Name} enum.", irEnum.Description));
 
         var includes = new List<CppIncludeDirectiveNode>();
         if (_options.AddUnrealEngineIncludesInHeaders)

@@ -1,0 +1,35 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Duplicates",
+    "version": "1"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "getItems",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}

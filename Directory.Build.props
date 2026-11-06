@@ -17,8 +17,9 @@
     <DebugType>embedded</DebugType>
     <EmbedAllSources>true</EmbedAllSources>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- PDBs are embedded in the assemblies; separate symbol packages would
+         contain no .pdb files and are rejected by NuGet.org. -->
+    <IncludeSymbols>false</IncludeSymbols>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' OR '$(GITLAB_CI)' == 'true' OR '$(TF_BUILD)' == 'true' OR '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
@@ -51,11 +52,6 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
-  <!-- Source Link providers (added to every project; auto-disabled when not packing) -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
-  </ItemGroup>
 
   <!-- Include README.md in packed nupkgs -->
   <ItemGroup Condition="'$(IsPackable)' == 'true'">

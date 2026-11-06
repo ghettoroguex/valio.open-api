@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -9,6 +10,7 @@ using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
 using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Ast.Visitors;
+using ValIO.Generators.CSharp.Services;
 
 namespace ValIO.Generators.CSharp.Ast.Renderers;
 
@@ -60,7 +62,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             }
         }
         
-        return _sb.ToString();
+        return NormalizeEndOfFile(_sb);
     }
 
     /// <summary>
@@ -81,8 +83,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             CodeFormatter.AppendEmptyLine(_sb);
         }
         
-        return _sb.ToString();
+        return NormalizeEndOfFile(_sb);
     }
+
+    private static string NormalizeEndOfFile(StringBuilder builder) =>
+        builder.ToString().TrimEnd('\r', '\n') + Environment.NewLine;
     
     /// <summary>
     /// Рендерит содержимое Namespace без очистки StringBuilder (для использования в CompilationUnit)
@@ -338,11 +343,22 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return RenderLiteral(node);
     }
 
+    /// <inheritdoc/>
+    public override string VisitDefaultExpression(DefaultExpressionNode node)
+    {
+        var value = node.Type is null ? "default" : $"default({RenderType(node.Type)})";
+        return node.SuppressNullableWarning ? value + "!" : value;
+    }
+
+    /// <inheritdoc />
+    public override string VisitTypeOfExpression(TypeOfExpressionNode node) => $"typeof({RenderType(node.TargetType)})";
+
     public override string VisitIdentifierExpression(IdentifierExpressionNode node)
     {
         return node.Identifier.Name;
     }
 
+    /// <inheritdoc />
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
@@ -380,7 +396,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         if (node.IsLambda && node.LambdaBody != null)
         {
             var lambdaBodyStr = Visit(node.LambdaBody);
-            return $"async () => await {lambdaBodyStr}";
+            return $"async () => {lambdaBodyStr}";
         }
         
         return $"{target}{genericTypeArgStr}({args})";
@@ -402,7 +418,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var target = Visit(node.Object);
-        return $"{target}.{node.Member.Name}";
+        return $"{target}.{CSharpIdentifier.Escape(node.Member.Name)}";
     }
 
     public override string VisitReturnStatement(ReturnStatementNode node)
@@ -425,7 +441,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var type = node.Type != null ? $"{RenderType(node.Type)} " : "var ";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        return $"{type}{node.Name.Name}{initializer};";
+        return $"{type}{CSharpIdentifier.Escape(node.Name.Name)}{initializer};";
     }
     
     public override string VisitThrowStatement(ThrowStatementNode node)
@@ -630,17 +646,13 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return sb.ToString();
     }
     
+    /// <inheritdoc />
     public override string VisitCastExpression(CastExpressionNode node)
     {
         var targetType = RenderType(node.TargetType);
         var expression = Visit(node.Expression);
         
-        // Проверяем, нужно ли использовать оператор "as" вместо обычного cast
-        var useAsOperator = node.Metadata != null && 
-                           node.Metadata.TryGetValue("UseAsOperator", out var useAsObj) && 
-                           useAsObj is bool useAs && useAs;
-        
-        if (useAsOperator)
+        if (node.UseAsOperator)
         {
             return $"{expression} as {targetType}";
         }
@@ -858,9 +870,13 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // без него DefaultValue ранее молча терялся при рендеринге свойств.
         var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
         var terminator = node.DefaultValue != null ? ";" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{accessor}{initializer}{terminator}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {CSharpIdentifier.Escape(node.Name.Name)}{accessor}{initializer}{terminator}");
     }
 
+    /// <summary>Renders a method definition or signature with valid declaration modifiers.</summary>
+    /// <param name="sb">The generated source buffer.</param>
+    /// <param name="node">The method declaration.</param>
+    /// <param name="indentLevel">The enclosing indentation depth.</param>
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
     {
         // XML комментарий
@@ -882,7 +898,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var modifiers = RenderModifiers(node.AccessModifier);
         var returnType = node.ReturnType != null ? $"{RenderType(node.ReturnType)} " : "";
         var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
-        var asyncKeyword = node.IsAsync ? "async " : "";
+        var asyncKeyword = node.IsAsync && node.Body is not null && !node.IsInterfaceMethod && !node.IsAbstract ? "async " : "";
         
         // Проверяем, нужно ли добавить override
         var overrideKeyword = node.IsOverride ? "override " : "";
@@ -981,7 +997,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         var type = RenderType(node.Type);
         var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{constKeyword}{readonlyKeyword}{type} {node.Name.Name}{initializer};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{constKeyword}{readonlyKeyword}{type} {CSharpIdentifier.Escape(node.Name.Name)}{initializer};");
     }
 
     private void RenderConstructor(StringBuilder sb, ConstructorDeclarationNode node, int indentLevel)
@@ -1065,7 +1081,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         };
         var type = RenderType(node.Type);
         var defaultValue = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        sb.Append($"{modifiers}{type} {node.Name.Name}{defaultValue}");
+        sb.Append($"{modifiers}{type} {CSharpIdentifier.Escape(node.Name.Name)}{defaultValue}");
     }
 
     private void RenderEnumMember(StringBuilder sb, EnumMemberDeclarationNode node, int indentLevel, string? comma = null)
@@ -1202,21 +1218,15 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         }
     }
 
+    /// <summary>Renders a literal value without interpreting its content as C# syntax.</summary>
+    /// <param name="node">The typed literal value.</param>
+    /// <returns>Escaped C# source for the literal.</returns>
     private string RenderLiteral(LiteralExpressionNode node)
     {
-        // Специальная обработка для "default"/"default!" значения — рендерятся как есть (raw-код),
-        // а не как строковый литерал в кавычках. "default" — CancellationToken и другие value types;
-        // "default!" — non-nullable ссылочные свойства без required (см. BuildProperty), чтобы
-        // подавить CS8618 в проектах с <Nullable>enable</Nullable>.
-        if (node.Value?.ToString() is "default" or "default!")
-        {
-            return node.Value.ToString()!;
-        }
-        
         return node.LiteralKind switch
         {
             LiteralKind.String => $"\"{CodeEscapeHelper.EscapeString(node.Value?.ToString() ?? string.Empty)}\"",
-            LiteralKind.Number => node.Value?.ToString() ?? "0",
+            LiteralKind.Number => Convert.ToString(node.Value, CultureInfo.InvariantCulture) ?? "0",
             LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
             LiteralKind.Null => "null",
             LiteralKind.Character => $"'{CodeEscapeHelper.EscapeString(node.Value?.ToString() ?? string.Empty)}'",
@@ -1247,17 +1257,17 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitPathParameter(PathParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitQueryParameter(QueryParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitHeaderParameter(HeaderParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitRequestBody(RequestBodyNode node)

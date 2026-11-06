@@ -18,4 +18,8 @@ public interface IKotlinAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitKotlinEnumMember(KotlinEnumMemberNode node);
     TResult VisitKotlinFunctionDeclaration(KotlinFunctionDeclarationNode node);
     TResult VisitKotlinParameter(KotlinParameterNode node);
+    /// <summary>Visits an anonymous object implementing a Kotlin interface.</summary>
+    /// <param name="node">The structured anonymous object expression.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitKotlinObjectExpression(KotlinObjectExpressionNode node);
 }

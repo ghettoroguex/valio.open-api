@@ -30,6 +30,8 @@ public class KyClientStepTests
             f.RelativePath.EndsWith(".ky.ts", StringComparison.Ordinal));
     }
 
+    /// <summary>Verifies KyClient_GetByPathParam_EmitsKyGetCall with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task KyClient_GetByPathParam_EmitsKyGetCall()
     {
@@ -39,7 +41,7 @@ public class KyClientStepTests
         var ky = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.ky.ts", StringComparison.Ordinal));
         ky.Content.Should().Contain("import ky");
-        ky.Content.Should().Contain("ky.get");
+        ky.Content.Should().Contain("httpClient.get");
         ky.Content.Should().Contain("requestUrl");
     }
 

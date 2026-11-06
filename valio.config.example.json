@@ -1,5 +1,19 @@
 {
   "projects": {
+    "MyNativeApi": {
+      "language": "cpp",
+      "schema": "https://api.example.com/swagger/v1/swagger.json",
+      "outputPath": "C:\\Workspace\\MyProject\\Generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "runtime": "std",
+        "cxxStandard": 17,
+        "apiStyle": "both",
+        "clientShape": "interface+impl",
+        "namespace": "MyNativeApi"
+      }
+    },
     "MyApi": {
       "language": "CSharp",
       "schema": "https://api.example.com/swagger/v1/swagger.json",

@@ -11,7 +11,7 @@ ValIO приветствует участие сообщества — новы�
 ## Локальная установка
 
 ```bash
-git clone https://github.com/your-org/valio
+git clone https://github.com/valio-projects/valio.open-api
 cd valio
 dotnet build ValIO.sln
 dotnet test  ValIO.sln

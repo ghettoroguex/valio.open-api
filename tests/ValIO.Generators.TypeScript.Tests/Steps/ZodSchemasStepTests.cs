@@ -105,10 +105,9 @@ public class ZodSchemasStepTests
         enumSchema.Content.Should().NotContain("UserRoleValues = [");
     }
 
-    // oneOf + discriminator → z.discriminatedUnion("<key>", [...]) (faster, better errors than z.union);
-    // the discriminator key matches the variants' sanitized property name.
+    /// <summary>Verifies named schema variants use exact-one validation without assuming concrete Zod object types.</summary>
     [Test]
-    public async Task OneOfWithDiscriminator_EmitsDiscriminatedUnion()
+    public async Task OneOfWithDiscriminator_UsesSafeExclusiveUnion()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("discriminated-oneof.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
@@ -119,7 +118,8 @@ public class ZodSchemasStepTests
 
         var petSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.Ordinal));
-        petSchema.Content.Should().Contain("z.discriminatedUnion(\"petType\", [CatSchema, DogSchema])");
-        petSchema.Content.Should().NotContain("z.union(");
+        petSchema.Content.Should().Contain("z.custom<unknown>(").And.Contain(".safeParse(value).success")
+            .And.Contain("z.union([CatSchema, DogSchema])");
+        petSchema.Content.Should().NotContain("z.discriminatedUnion(");
     }
 }

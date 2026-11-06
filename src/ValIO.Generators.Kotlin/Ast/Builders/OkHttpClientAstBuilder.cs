@@ -15,15 +15,26 @@ namespace ValIO.Generators.Kotlin.Ast.Builders;
 /// </summary>
 public sealed class OkHttpClientAstBuilder
 {
+    /// <summary>Converts operation and argument names into Kotlin identifiers.</summary>
     private readonly INamingConverter _namingConverter;
+    /// <summary>Maps operation payload types into Kotlin values.</summary>
     private readonly KotlinIrTypeMapper _typeMapper;
 
+    /// <summary>Creates the client builder using the shared naming and type services.</summary>
+    /// <param name="namingConverter">The source identifier converter.</param>
+    /// <param name="typeMapper">The Kotlin type mapper.</param>
     public OkHttpClientAstBuilder(INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
     {
         _namingConverter = namingConverter;
         _typeMapper = typeMapper;
     }
 
+    /// <summary>Builds a caller-owned OkHttp service with coroutine-aware native request cancellation.</summary>
+    /// <param name="client">The operation group.</param>
+    /// <param name="apiPackage">The client declaration package.</param>
+    /// <param name="modelsPackage">The generated model package.</param>
+    /// <param name="knownModelNames">The finalized model and enum names.</param>
+    /// <returns>The service and its cancellation adapter.</returns>
     public KotlinFileNode BuildFile(
         IrClient client,
         string apiPackage,
@@ -61,6 +72,7 @@ public sealed class OkHttpClientAstBuilder
         {
             methods.Add(BuildOperationMethod(op, importScan));
         }
+        methods.Add(KotlinCancellableCallAstBuilder.Build());
 
         var classNode = new KotlinClassDeclarationNode(
             new IdentifierNode(className),
@@ -75,7 +87,15 @@ public sealed class OkHttpClientAstBuilder
         {
             new KotlinImportNode("kotlinx.coroutines.Dispatchers"),
             new KotlinImportNode("kotlinx.coroutines.withContext"),
+            new KotlinImportNode("kotlinx.coroutines.CancellableContinuation"),
+            new KotlinImportNode("kotlinx.coroutines.suspendCancellableCoroutine"),
+            new KotlinImportNode("kotlin.coroutines.CoroutineContext"),
             new KotlinImportNode("kotlinx.serialization.json.Json"),
+            new KotlinImportNode("java.io.IOException"),
+            new KotlinImportNode("okhttp3.Call"),
+            new KotlinImportNode("okhttp3.Callback"),
+            new KotlinImportNode("okhttp3.Response"),
+            new KotlinImportNode("okhttp3.ResponseBody.Companion.toResponseBody"),
             new KotlinImportNode("okhttp3.HttpUrl"),
             new KotlinImportNode("okhttp3.MediaType.Companion.toMediaType"),
             new KotlinImportNode("okhttp3.OkHttpClient"),
@@ -96,6 +116,10 @@ public sealed class OkHttpClientAstBuilder
         return new KotlinFileNode(apiPackage, declarations: [classNode], imports: imports);
     }
 
+    /// <summary>Builds a public suspend operation preserving its source payload types.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="importScan">The recursive type imports for this client.</param>
+    /// <returns>The operation declaration.</returns>
     private KotlinFunctionDeclarationNode BuildOperationMethod(
         IrOperation op,
         KotlinTypeImportScanner.Result importScan)
@@ -170,6 +194,9 @@ public sealed class OkHttpClientAstBuilder
             isExpressionBody: true);
     }
 
+    /// <summary>Preserves operation descriptions in generated Kotlin documentation.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <returns>The operation comment.</returns>
     private static CommentNode? BuildOperationDocstring(IrOperation op)
     {
         var sb = new StringBuilder();
@@ -183,6 +210,13 @@ public sealed class OkHttpClientAstBuilder
         return new CommentNode(sb.ToString(), CommentKind.MultiLine);
     }
 
+    /// <summary>Builds the legacy operation body using the structured cancellation adapter for transport execution.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="responseModelName">The direct response model name.</param>
+    /// <param name="responseModelNameForList">The response collection element model name.</param>
+    /// <param name="isVoidReturn">Whether the operation has no response payload.</param>
+    /// <param name="isBinaryReturn">Whether the response is represented by raw bytes.</param>
+    /// <returns>The operation body lines consumed by the legacy AST contract.</returns>
     private IReadOnlyList<string> BuildMethodBody(
         IrOperation op,
         string? responseModelName,
@@ -245,7 +279,7 @@ public sealed class OkHttpClientAstBuilder
             }
             else
             {
-                // TODO multipart/form support.
+                // Non-JSON body codecs retain their existing representation in this cancellation slice.
                 lines.Add($"{Inner}val requestBody = (body?.toString() ?: \"\").toRequestBody(\"application/octet-stream\".toMediaType())");
             }
             lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", requestBody)");
@@ -260,7 +294,7 @@ public sealed class OkHttpClientAstBuilder
         }
 
         lines.Add($"{Inner}val request = requestBuilder.build()");
-        lines.Add($"{Inner}client.newCall(request).execute().use {{ response ->");
+        lines.Add($"{Inner}{KotlinCancellableCallAstBuilder.MethodName}(request).use {{ response ->");
         lines.Add($"{Inner}{Inner}if (!response.isSuccessful) error(\"HTTP ${{response.code}}: ${{response.message}}\")");
 
         if (isVoidReturn)
@@ -292,6 +326,9 @@ public sealed class OkHttpClientAstBuilder
         return lines;
     }
 
+    /// <summary>Finds a model reference beneath nullable or optional wrappers.</summary>
+    /// <param name="type">The response type.</param>
+    /// <returns>The model name, or null for another value shape.</returns>
     private static string? TryGetSimpleModelName(IrType type) => type switch
     {
         IrModelReference r => r.ModelName,
@@ -301,6 +338,8 @@ public sealed class OkHttpClientAstBuilder
     };
 
     /// <summary>Returns the inner model name when <paramref name="type"/> is <c>List&lt;Model&gt;</c>.</summary>
+    /// <param name="type">The response type.</param>
+    /// <returns>The model collection element name, or null.</returns>
     private static string? TryGetArrayOfSimpleModelName(IrType type) => type switch
     {
         IrArrayType a       => TryGetSimpleModelName(a.ElementType),
@@ -309,12 +348,18 @@ public sealed class OkHttpClientAstBuilder
         _ => null,
     };
 
+    /// <summary>Derives the generated service class identifier.</summary>
+    /// <param name="clientName">The source group name.</param>
+    /// <returns>The Kotlin API class name.</returns>
     private string ToClassName(string clientName)
     {
         var pascal = _namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
 
+    /// <summary>Escapes source values embedded in legacy Kotlin string literals.</summary>
+    /// <param name="s">The unescaped value.</param>
+    /// <returns>The escaped literal contents.</returns>
     private static string EscapeStringLiteral(string s) =>
         s.Replace("\\", "\\\\", StringComparison.Ordinal)
          .Replace("\"", "\\\"", StringComparison.Ordinal);

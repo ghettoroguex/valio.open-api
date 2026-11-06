@@ -12,7 +12,14 @@ public sealed class EnumMemberDeclarationNode : DeclarationNode
     /// Значение enum
     /// </summary>
     public ExpressionNode? Value { get; }
-    
+
+    /// <summary>
+    /// Wire-имя значения (исходная строка/число из OpenAPI, попадает в JSON/URL без
+    /// изменений, даже когда Name санитизирован). null — wire совпадает с Name
+    /// или значение не строковое (тогда используется Value).
+    /// </summary>
+    public string? WireValue { get; }
+
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -36,10 +43,12 @@ public sealed class EnumMemberDeclarationNode : DeclarationNode
         ExpressionNode? value = null,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        string? wireValue = null)
         : base(name, documentation, attributes, metadata)
     {
         Value = value;
+        WireValue = wireValue;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -54,6 +63,7 @@ public sealed class EnumMemberDeclarationNode : DeclarationNode
             Value != null ? (ExpressionNode)Value.Clone() : null,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            WireValue);
     }
 }

@@ -1,0 +1,31 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "oneof-number-constraints.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "ConstraintContainer": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "number",
+                "exclusiveMinimum": 10,
+                "exclusiveMaximum": 20
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

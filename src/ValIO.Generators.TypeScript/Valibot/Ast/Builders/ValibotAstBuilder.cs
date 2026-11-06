@@ -11,6 +11,7 @@ using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 
@@ -26,13 +27,16 @@ public sealed class ValibotAstBuilder
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
     }
 
+    /// <summary>Builds a model schema with sibling properties applied to every composition alternative.</summary>
+    /// <param name="model">The model being validated.</param>
+    /// <returns>The complete Valibot schema expression.</returns>
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
         if (model.Composition != null && model.Composition.Types.Count > 0)
         {
             return model.Composition.Kind switch
             {
-                IrCompositionKind.OneOf or IrCompositionKind.AnyOf => BuildUnion(model.Composition.Types, model.Name),
+                IrCompositionKind.OneOf or IrCompositionKind.AnyOf => BuildModelUnion(model),
                 IrCompositionKind.AllOf => BuildModelIntersection(model),
                 _ => BuildObject(model)
             };
@@ -41,26 +45,51 @@ public sealed class ValibotAstBuilder
         return BuildObject(model);
     }
 
+    /// <summary>Intersects sibling object constraints with a model's alternatives.</summary>
+    /// <param name="model">The composed model.</param>
+    /// <returns>A union schema, intersected with sibling properties when present.</returns>
+    private ExpressionNode BuildModelUnion(IrModel model)
+    {
+        var alternatives = BuildUnion(model.Composition!.Types, model.Name,
+            exclusive: model.Composition.Kind == IrCompositionKind.OneOf);
+        return model.Properties.Count == 0 ? alternatives : BuildIntersection([alternatives, BuildObject(model)]);
+    }
+
     public ExpressionNode BuildEnumSchema(IrEnum enumModel)
     {
         return Call("picklist", Id($"{enumModel.Name}Values"));
     }
 
-    public ExpressionNode BuildSchemaFromIrType(IrType irType, string? currentModelName = null)
+    /// <summary>Builds a schema while preserving constraints across nullable and optional wrappers.</summary>
+    /// <param name="irType">The IR type being validated.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="constraints">Constraints applying to the current value rather than collection elements.</param>
+    /// <returns>The Valibot schema expression.</returns>
+    public ExpressionNode BuildSchemaFromIrType(
+        IrType irType,
+        string? currentModelName = null,
+        IrPropertyConstraints? constraints = null)
     {
+        constraints ??= irType.Constraints;
+        if (irType is IrPrimitiveType constrainedPrimitive && constrainedPrimitive.Constraints is { } local
+            && constraints is not null && !ValidationConstraints.Equivalent(local, constraints))
+            return BuildIntersection([
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, local),
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, constraints)
+            ]);
         return irType switch
         {
-            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind),
+            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, constraints),
             IrModelReference reference => BuildModelReference(reference, currentModelName),
             IrArrayType array => Call("array", BuildSchemaFromIrType(array.ElementType, currentModelName)),
             IrDictionaryType dictionary => Call(
                 "record",
                 BuildSchemaFromIrType(dictionary.KeyType, currentModelName),
                 BuildSchemaFromIrType(dictionary.ValueType, currentModelName)),
-            IrUnionType union => BuildUnion(union.Types, currentModelName),
-            IrIntersectionType intersection => BuildIntersection(intersection.Types, currentModelName),
-            IrNullableType nullable => Call("nullable", BuildSchemaFromIrType(nullable.InnerType, currentModelName)),
-            IrOptionalType optional => Call("optional", BuildSchemaFromIrType(optional.InnerType, currentModelName)),
+            IrUnionType union => BuildUnion(union.Types, currentModelName, constraints, exclusive: union.Kind == IrUnionKind.OneOf),
+            IrIntersectionType intersection => BuildIntersection(intersection.Types, currentModelName, constraints),
+            IrNullableType nullable => Call("nullable", BuildSchemaFromIrType(nullable.InnerType, currentModelName, constraints)),
+            IrOptionalType optional => Call("optional", BuildSchemaFromIrType(optional.InnerType, currentModelName, constraints)),
             _ => Call("unknown")
         };
     }
@@ -77,19 +106,16 @@ public sealed class ValibotAstBuilder
     }
 
     /// <summary>
-    /// Строит <c>v.object({...})</c> из набора параметров операции (route/query):
-    /// необязательные параметры оборачиваются в <c>v.optional(...)</c>.
+    /// Builds an object schema with parameter constraints and independent optionality and nullability.
     /// </summary>
+    /// <param name="parameters">The operation parameters to validate.</param>
+    /// <returns>The Valibot object expression.</returns>
     public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
             .Select(parameter =>
             {
-                // Apply length/range/pattern constraints inline (like model-property schemas) when the parameter
-                // is a bare primitive; otherwise fall back to the plain type schema.
-                var schema = parameter.Type is IrPrimitiveType primitive
-                    ? BuildPrimitive(primitive.PrimitiveKind, parameter.Constraints)
-                    : BuildSchemaFromIrType(parameter.Type);
+                var schema = BuildSchemaFromIrType(parameter.Type, constraints: parameter.Constraints);
                 return new PropertyAssignmentNode(
                     new IdentifierNode(parameter.Name),
                     parameter.IsRequired ? schema : Call("optional", schema));
@@ -99,24 +125,14 @@ public sealed class ValibotAstBuilder
         return Call("object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
     }
 
+    /// <summary>Builds a property schema without conflating missing keys with explicit null values.</summary>
+    /// <param name="property">The property and its validation constraints.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <returns>The schema with an optional wrapper only when the property is not required.</returns>
     private ExpressionNode BuildPropertySchema(IrProperty property, string currentModelName)
     {
-        var type = property.Type;
-        var isNullable = false;
-
-        if (type is IrNullableType nullable)
-        {
-            type = nullable.InnerType;
-            isNullable = true;
-        }
-
-        var schema = type is IrPrimitiveType primitive
-            ? BuildPrimitive(primitive.PrimitiveKind, property.Constraints)
-            : BuildSchemaFromIrType(type, currentModelName);
-
-        return !property.IsRequired || isNullable
-            ? Call("nullish", schema)
-            : schema;
+        var schema = BuildSchemaFromIrType(property.Type, currentModelName, property.Constraints);
+        return property.IsRequired ? schema : Call("optional", schema);
     }
 
     private ExpressionNode BuildModelIntersection(IrModel model)
@@ -131,12 +147,20 @@ public sealed class ValibotAstBuilder
         return BuildIntersection(schemas);
     }
 
-    private ExpressionNode BuildUnion(IReadOnlyList<IrType> types, string? currentModelName)
+    /// <summary>Combines alternatives without losing value constraints.</summary>
+    /// <param name="types">The alternative types.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="constraints">Constraints applied to compatible primitive alternatives.</param>
+    /// <param name="exclusive">Whether exactly one alternative must match.</param>
+    /// <returns>The union schema, collapsing a single alternative.</returns>
+    private ExpressionNode BuildUnion(IReadOnlyList<IrType> types, string? currentModelName, IrPropertyConstraints? constraints = null, bool exclusive = false)
     {
         var schemas = types
-            .Select(type => BuildSchemaFromIrType(type, currentModelName))
+            .Select(type => BuildSchemaFromIrType(type, currentModelName, constraints))
             .ToImmutableList();
 
+        if (exclusive)
+            return ExclusiveUnionAst.Valibot(schemas);
         return schemas.Count switch
         {
             0 => Call("unknown"),
@@ -145,10 +169,15 @@ public sealed class ValibotAstBuilder
         };
     }
 
-    private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types, string? currentModelName)
+    /// <summary>Combines intersecting types while retaining primitive constraints.</summary>
+    /// <param name="types">The participating types.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="constraints">Constraints applied to compatible primitive members.</param>
+    /// <returns>The intersection expression.</returns>
+    private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types, string? currentModelName, IrPropertyConstraints? constraints = null)
     {
         var schemas = types
-            .Select(type => BuildSchemaFromIrType(type, currentModelName))
+            .Select(type => BuildSchemaFromIrType(type, currentModelName, constraints))
             .ToList();
 
         return BuildIntersection(schemas);
@@ -175,6 +204,10 @@ public sealed class ValibotAstBuilder
             : Id(schemaName);
     }
 
+    /// <summary>Builds a strict primitive schema matching the generated runtime representation.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="constraints">The primitive's value constraints.</param>
+    /// <returns>The constrained primitive schema.</returns>
     private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, IrPropertyConstraints? constraints = null)
     {
         var baseSchema = kind switch
@@ -184,14 +217,17 @@ public sealed class ValibotAstBuilder
             IrPrimitiveKind.Integer => Pipe(Call("number"), Call("integer")),
             IrPrimitiveKind.Long => Pipe(Call("number"), Call("integer")),
             IrPrimitiveKind.Boolean => Call("boolean"),
-            IrPrimitiveKind.DateTime => Pipe(Call("string"), Call("isoDateTime")),
-            IrPrimitiveKind.Date => Pipe(Call("string"), Call("isoDate")),
-            IrPrimitiveKind.Time => Pipe(Call("string"), Call("isoTime")),
+            IrPrimitiveKind.DateTime => Pipe(Call("string"),
+                Call("check", StandardStringFormatAst.Build("date-time"))),
+            IrPrimitiveKind.Date => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("date"))),
+            IrPrimitiveKind.Time => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("time"))),
             IrPrimitiveKind.Uuid => BuildUuidSchema(),
             IrPrimitiveKind.Any => Call("unknown"),
             IrPrimitiveKind.Void => Call("undefined"),
             IrPrimitiveKind.Null => Call("null"),
-            IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File => Call("unknown"),
+            IrPrimitiveKind.Binary => Call("instance", Id("Blob")),
+            IrPrimitiveKind.ByteArray => Call("instance", Id("Uint8Array")),
+            IrPrimitiveKind.File => Call("instance", Id("File")),
             _ => Call("unknown")
         };
 
@@ -199,16 +235,17 @@ public sealed class ValibotAstBuilder
     }
 
     /// <summary>
-    /// UUID schema per configured mode: guid → v.uuid(); string → v.string();
+    /// UUID schema per configured mode: guid uses the shared canonical text predicate; string uses v.string();
     /// regex → v.pipe(v.string(), v.regex(UUID_REGEX)).
     /// </summary>
+    /// <returns>The UUID schema following the selected validation policy.</returns>
     private ExpressionNode BuildUuidSchema()
     {
         return _uuidFormat switch
         {
             TypeScriptOptionIds.UuidFormat.String => Call("string"),
             TypeScriptOptionIds.UuidFormat.Regex => Pipe(Call("string"), Call("regex", Id(TypeScriptOptionIds.UuidFormat.RegexConstName))),
-            _ => Pipe(Call("string"), Call("uuid")),
+            _ => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("uuid"))),
         };
     }
 

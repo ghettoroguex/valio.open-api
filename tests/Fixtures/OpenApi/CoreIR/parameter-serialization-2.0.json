@@ -1,0 +1,22 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Swagger parameter serialization", "version": "1.0.0" },
+  "paths": {
+    "/items/{pathDefault}": {
+      "get": {
+        "operationId": "getItems",
+        "parameters": [
+          { "name": "pathDefault", "in": "path", "required": true, "type": "array", "items": { "type": "string" } },
+          { "name": "queryDefault", "in": "query", "type": "array", "items": { "type": "string" } },
+          { "name": "queryCsv", "in": "query", "type": "array", "collectionFormat": "csv", "items": { "type": "string" } },
+          { "name": "queryMulti", "in": "query", "type": "array", "collectionFormat": "multi", "items": { "type": "string" } },
+          { "name": "querySpaces", "in": "query", "type": "array", "collectionFormat": "ssv", "items": { "type": "string" } },
+          { "name": "queryPipes", "in": "query", "type": "array", "collectionFormat": "pipes", "items": { "type": "string" } },
+          { "name": "headerDefault", "in": "header", "type": "array", "items": { "type": "string" } },
+          { "name": "headerCsv", "in": "header", "type": "array", "collectionFormat": "csv", "items": { "type": "string" } }
+        ],
+        "responses": { "204": { "description": "No content" } }
+      }
+    }
+  }
+}

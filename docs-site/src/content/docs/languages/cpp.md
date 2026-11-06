@@ -1,6 +1,6 @@
 ---
-title: C++ (Unreal Engine)
-description: C++ generator options and outputs targeting Unreal Engine.
+title: C++ (Unreal Engine / standalone std)
+description: C++ generator options and outputs — UE runtime profile and the standalone cpp-httplib + nlohmann_json std profile.
 sidebar:
   order: 16
 ---
@@ -53,4 +53,62 @@ Notable internal knobs include:
 
 ```bash
 valio generate -s ./openapi.yaml -o ./Source/MyGame -l cpp
+```
+
+## Standalone std runtime profile (`runtime: "std"`)
+
+Besides Unreal Engine, the C++ plugin emits **standalone modern C++** built on
+**cpp-httplib** (transport) and **nlohmann_json** (model format). The output is
+verified by a CMake compile fixture against exact pins `cpp-httplib v0.18.3` and
+`nlohmann_json v3.12.0` on C++ **17/20/23** (MSVC and GCC), including a live
+smoke-server round-trip.
+
+### Model/codec separation (no JSON in model headers)
+
+Consumers of generated models depend on **std only**. `Models/*.h` and
+`Enums/*.h` contain zero third-party includes; `to_json`/`from_json` are free
+ADL functions declared in `Serializers/*Json.h` (forward declarations only)
+and defined in `Serializers/*Json.cpp` (the full `<nlohmann/json.hpp>`).
+`<httplib.h>` appears in exactly one translation unit (`Runtime/ValIOHttp.cpp`).
+
+### Options
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `runtime` | `ue` | `ue` (Unreal) or `std` (cpp-httplib + nlohmann_json). |
+| `cxxStandard` | `17` | Target standard: 17, 20 or 23. `ValIO::Expected` upgrades to `std::expected` at compile time; generated code is identical. |
+| `apiStyle` | `sync` | `sync` (`ValIO::Expected<T, ValIO::Error>`), `async` (`std::future`), or `both`. |
+| `clientShape` | `class` | `class` (single `{Client}Client`) or `interface+impl` (`I{Client}` pure-virtual interface + implementation — mocks/DI friendly). |
+| `namespace` | `Api` | Root namespace for models/enums/clients. |
+| `httpInclude` / `jsonInclude` / `jsonFwdInclude` | httplib.h / nlohmann/json.hpp / json_fwd.hpp | Include overrides for consumers with wrapper headers. |
+| `errorModelName` | `RestApiErrorResponse` | Error model name (reserved for non-2xx body parsing). |
+| `emitCmake` | `false` | Emit a CMakeLists snippet. |
+
+### File layout
+
+```
+<output>/
+  Models/Order.h              # pure struct, std-only includes
+  Enums/OrderStatus.h         # enum class + constexpr ToWire/FromWire (no JSON)
+  Serializers/OrderJson.h/.cpp# ADL to_json/from_json — the only place with wire names
+  Clients/IStore.h            # (clientShape=interface+impl) pure-virtual interface
+  Clients/StoreClient.h/.cpp  # implementation, named local variables per step
+  Runtime/ValIO*.h/.cpp       # self-contained ValIO runtime (Expected/Error/Http/Json)
+```
+
+### Example
+
+```bash
+valio generate -s ./openapi.yaml -o ./generated -l cpp --opt-from-config
+```
+
+```jsonc
+// valio.config.json
+{ "projects": { "store": {
+    "language": "cpp",
+    "schema": "./openapi.yaml",
+    "outputPath": "./generated",
+    "options": { "runtime": "std", "cxxStandard": 17, "apiStyle": "both",
+                 "clientShape": "interface+impl", "namespace": "Petstore" }
+} } }
 ```

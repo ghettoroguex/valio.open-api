@@ -20,7 +20,7 @@ public sealed class IdentityClientContractTests
     [Test]
     public void ModelsAndParametersKeepPresenceSeparateFromNull()
     {
-        var builder = new TypeScriptAstBuilder(new NamingConverter());
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter());
         var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
         var text = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         var nullable = new IrNullableType { InnerType = text };
@@ -50,7 +50,7 @@ public sealed class IdentityClientContractTests
                 new IrParameter { Name = "optionalValue", IsRequired = false, Type = text }
             ]
         };
-        var paramsBuilder = new TypeScriptParamsAstBuilder(new NamingConverter(), builder.BuildType);
+        var paramsBuilder = new TypeScriptParamsAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), builder.BuildType);
         var paramsCode = renderer.Render(paramsBuilder.BuildParamsSourceFile(operation, null, null, operation.MethodName));
         paramsCode.Should().Contain("requiredNullable: string | null;");
         paramsCode.Should().Contain("optionalValue?: string;");
@@ -68,10 +68,7 @@ public sealed class IdentityClientContractTests
             Properties = [Property("id", new IrNullableType { InnerType = text }, false)],
             Composition = new IrComposition { Kind = IrCompositionKind.AllOf, Types = [new IrModelReference { ModelName = "Base" }] }
         };
-        var builder = new TypeScriptAstBuilder(new NamingConverter())
-        {
-            ModelsByName = new Dictionary<string, IrModel> { ["Base"] = parent, ["Child"] = child }
-        };
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create([parent, child]), new NamingConverter());
         var renderer = new TypeScriptAstRenderer();
         renderer.Render(builder.BuildSourceFile(parent)).Should().Contain("id: string;");
         var derived = renderer.Render(builder.BuildSourceFile(child));
@@ -91,10 +88,7 @@ public sealed class IdentityClientContractTests
             Name = "Child", Properties = [Property("id", number, true)],
             Composition = new IrComposition { Kind = IrCompositionKind.AllOf, Types = [new IrModelReference { ModelName = "Base" }] }
         };
-        var builder = new TypeScriptAstBuilder(new NamingConverter())
-        {
-            ModelsByName = new Dictionary<string, IrModel> { ["Base"] = parent, ["Child"] = child }
-        };
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create([parent, child]), new NamingConverter());
         var code = new TypeScriptAstRenderer().Render(builder.BuildSourceFile(child));
         code.Should().Contain("id: (string | null) & number;");
         code.Should().NotContain("id?:");
@@ -124,7 +118,7 @@ public sealed class IdentityClientContractTests
             Transports = ["axios"],
             Axios = new TypeScriptAxiosOptions { CustomInstancePath = "@shared/api/api-mutator.ts", CustomInstanceName = "apiMutator" }
         };
-        var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(new TypeScriptAstBuilder(new NamingConverter(), options)
+        var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), options)
             .BuildSourceFileForOperation(Operation([new IrResponse { StatusCode = "204", Type = null }]), transport: "axios"));
         code.Should().Contain("from \"@shared/api/api-mutator\"");
         code.Should().Contain("signal?: AbortSignal");
@@ -135,6 +129,7 @@ public sealed class IdentityClientContractTests
     }
 
     /// <summary>Documented bodyless successes are represented and never parsed as JSON by fetch.</summary>
+    /// <param name="transport">The native HTTP transport used to decode successful responses.</param>
     [TestCase("axios")]
     [TestCase("fetch")]
     public void MixedResponsesIncludeBodylessSuccess(string transport)
@@ -143,10 +138,10 @@ public sealed class IdentityClientContractTests
             new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } },
             new IrResponse { StatusCode = "204", Type = null }
         ]);
-        var builder = new TypeScriptAstBuilder(new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
         var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
         var code = renderer.Render(builder.BuildSourceFileForOperation(operation, transport: transport));
-        var results = renderer.Render(new TypeScriptResultsAstBuilder(new NamingConverter(), builder.BuildType)
+        var results = renderer.Render(new TypeScriptResultsAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), builder.BuildType)
             .BuildResultsSourceFile(operation, null, null, operation.MethodName));
         results.Should().Contain("ExampleResult204");
         results.Should().Contain("body: undefined;");
@@ -162,7 +157,7 @@ public sealed class IdentityClientContractTests
     public void ClientBlankLinesDoNotContainWhitespace(string transport)
     {
         var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with { Path = "/  literal  " };
-        var builder = new TypeScriptAstBuilder(new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
         var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(builder.BuildSourceFileForOperation(operation, transport: transport));
         code.Split('\n').Select(line => line.TrimEnd('\r')).Should().NotContain(line => line.Length > 0 && string.IsNullOrWhiteSpace(line));
         code.Should().Contain("/  literal  ");
@@ -175,7 +170,7 @@ public sealed class IdentityClientContractTests
     public void FetchVoidDoesNotReadJson()
     {
         var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]);
-        var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(new TypeScriptAstBuilder(new NamingConverter())
+        var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter())
             .BuildSourceFileForOperation(operation, transport: "fetch"));
         code.Should().Contain("Promise<void>");
         code.Should().NotContain("response.json");

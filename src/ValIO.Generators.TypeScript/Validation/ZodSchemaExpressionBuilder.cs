@@ -9,6 +9,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Zod.Ast.Builders;
 using static ValIO.Generators.TypeScript.Validation.ValidationAst;
 
 namespace ValIO.Generators.TypeScript.Validation;
@@ -20,8 +21,11 @@ namespace ValIO.Generators.TypeScript.Validation;
 /// </summary>
 internal sealed class ZodSchemaExpressionBuilder
 {
+    /// <summary>The configured UUID validation mode shared by parameter and response schemas.</summary>
     private readonly string _uuidFormat;
 
+    /// <summary>Creates a schema builder for a configured UUID representation.</summary>
+    /// <param name="uuidFormat">The UUID validation mode, or the default when absent.</param>
     public ZodSchemaExpressionBuilder(string? uuidFormat = null)
     {
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
@@ -32,25 +36,38 @@ internal sealed class ZodSchemaExpressionBuilder
     /// </summary>
     /// <param name="type">The IR type to build a schema for.</param>
     /// <param name="coerceParams">
-    /// When <see langword="true"/>, numeric/boolean primitives use <c>z.coerce.*</c> for route/query parameters.
+    /// When <see langword="true"/>, numeric strings are coerced and exact boolean strings are decoded.
+    /// Response and body schemas pass <see langword="false"/>.
     /// </param>
-    /// <returns>The schema expression for the supplied type.</returns>
-    public ExpressionNode Build(IrType type, bool coerceParams = false) =>
-        type switch
+    /// <param name="constraints">Constraints applying to the current value.</param>
+    /// <param name="constraintsRef">An optional reference to exported constraint constants.</param>
+    /// <returns>The schema expression preserving wrappers and composition context.</returns>
+    public ExpressionNode Build(
+        IrType type,
+        bool coerceParams = false,
+        IrPropertyConstraints? constraints = null,
+        string? constraintsRef = null)
+    {
+        constraints ??= type.Constraints;
+        if (type is IrPrimitiveType constrainedPrimitive && constrainedPrimitive.Constraints is { } local
+            && constraints is not null && !ValidationConstraints.Equivalent(local, constraints))
+            return Call(Member(Id("z"), "intersection"),
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, coerceParams, local, constraintsRef: null),
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, coerceParams, constraints, constraintsRef));
+        return type switch
         {
             IrModelReference reference => Id($"{reference.ModelName}Schema"),
             IrArrayType array => Call(Member(Id("z"), "array"), Build(array.ElementType, coerceParams)),
             IrDictionaryType dictionary => Call(Member(Id("z"), "record"),
-                Call(Member(Id("z"), "string")), Build(dictionary.ValueType, coerceParams)),
-            IrNullableType nullable => Call(Member(Build(nullable.InnerType, coerceParams), "nullable")),
-            IrOptionalType optional => Call(Member(Build(optional.InnerType, coerceParams), "optional")),
-            IrUnionType union => Call(
-                Member(Id("z"), "union"),
-                new ArrayLiteralExpressionNode(union.Types.Select(t => Build(t, coerceParams)).ToImmutableList())),
-            IrIntersectionType intersection => BuildIntersection(intersection.Types),
-            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, coerceParams),
+                Build(dictionary.KeyType, coerceParams), Build(dictionary.ValueType, coerceParams)),
+            IrNullableType nullable => Call(Member(Build(nullable.InnerType, coerceParams, constraints, constraintsRef), "nullable")),
+            IrOptionalType optional => Call(Member(Build(optional.InnerType, coerceParams, constraints, constraintsRef), "optional")),
+            IrUnionType union => BuildUnion(union.Types, coerceParams, constraints, constraintsRef, union.Kind == IrUnionKind.OneOf),
+            IrIntersectionType intersection => BuildIntersection(intersection.Types, coerceParams, constraints, constraintsRef),
+            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, coerceParams, constraints, constraintsRef),
             _ => Call(Member(Id("z"), "unknown"))
         };
+    }
 
     /// <summary>
     /// Builds <c>z.object({...})</c> from a set of route/query parameters: numeric/boolean primitives are
@@ -58,18 +75,15 @@ internal sealed class ZodSchemaExpressionBuilder
     /// <c>.default(...)</c>, and descriptions become <c>.describe(...)</c>.
     /// </summary>
     /// <param name="parameters">The route or query parameters.</param>
+    /// <param name="constraintsRefPrefix">An optional reference to the exported parameter constraints.</param>
     /// <returns>The <c>z.object(...)</c> schema expression.</returns>
     public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null)
     {
         var properties = parameters
             .Select(parameter =>
             {
-                var schema = Build(parameter.Type, coerceParams: true);
-
-                // Constraint chain (.min/.max/.gt/.lt/.regex) referencing the exported constants object, mirroring
-                // model-property constraints. Applied to the base primitive before .optional()/.default().
-                if (constraintsRefPrefix != null && parameter.Type is IrPrimitiveType prim && parameter.Constraints != null)
-                    schema = ApplyConstraints(schema, prim.PrimitiveKind, parameter.Constraints, $"{constraintsRefPrefix}.{parameter.Name}");
+                var schema = Build(parameter.Type, coerceParams: true, parameter.Constraints,
+                    constraintsRefPrefix == null ? null : $"{constraintsRefPrefix}.{parameter.Name}");
 
                 if (!parameter.IsRequired)
                     schema = Call(Member(schema, "optional"));
@@ -85,65 +99,6 @@ internal sealed class ZodSchemaExpressionBuilder
             .ToImmutableList();
 
         return Call(Member(Id("z"), "object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
-    }
-
-    /// <summary>
-    /// Applies the length/range/pattern constraint chain to a parameter's base schema, referencing the exported
-    /// constants object (<c>{ref}.min</c>, <c>{ref}.maxLength</c>, …) exactly as the model-property schemas do.
-    /// Pattern is emitted as an inline <c>.regex(new RegExp("…"))</c> (matching the model builder).
-    /// </summary>
-    /// <param name="schema">The base primitive schema expression.</param>
-    /// <param name="kind">The parameter's primitive kind (selects numeric vs string rules).</param>
-    /// <param name="constraints">The parameter's constraints.</param>
-    /// <param name="constraintsRef">The dotted reference to the parameter's constraints entry (e.g. <c>GetTreeQueryParamsConstraints.limit</c>).</param>
-    /// <returns>The schema with the constraint chain applied.</returns>
-    private static ExpressionNode ApplyConstraints(ExpressionNode schema, IrPrimitiveKind kind, IrPropertyConstraints constraints, string constraintsRef)
-    {
-        var isNumeric = kind is IrPrimitiveKind.Number or IrPrimitiveKind.Integer or IrPrimitiveKind.Long;
-        var isString = kind is IrPrimitiveKind.String or IrPrimitiveKind.Uuid or IrPrimitiveKind.DateTime
-            or IrPrimitiveKind.Date or IrPrimitiveKind.Time;
-
-        if (isNumeric)
-        {
-            if (constraints.Min.HasValue)
-                schema = Call(Member(schema, "min"), Ref(constraintsRef, "min"));
-            if (constraints.Max.HasValue)
-                schema = Call(Member(schema, "max"), Ref(constraintsRef, "max"));
-            if (constraints.ExclusiveMin.HasValue)
-                schema = Call(Member(schema, "gt"), Ref(constraintsRef, "exclusiveMin"));
-            if (constraints.ExclusiveMax.HasValue)
-                schema = Call(Member(schema, "lt"), Ref(constraintsRef, "exclusiveMax"));
-        }
-        else if (isString)
-        {
-            if (constraints.MinLength.HasValue)
-                schema = Call(Member(schema, "min"), Ref(constraintsRef, "minLength"));
-            if (constraints.MaxLength.HasValue)
-                schema = Call(Member(schema, "max"), Ref(constraintsRef, "maxLength"));
-            if (!string.IsNullOrEmpty(constraints.Pattern))
-            {
-                var regex = new CallExpressionNode(
-                    new IdentifierExpressionNode(new IdentifierNode("RegExp")),
-                    ImmutableList.Create<ExpressionNode>(new LiteralExpressionNode(constraints.Pattern, LiteralKind.String)),
-                    isNewExpression: true);
-                schema = Call(Member(schema, "regex"), regex);
-            }
-        }
-
-        return schema;
-    }
-
-    /// <summary>Builds a member reference <c>{constraintsRef}.{field}</c> (dotted path split into member accesses).</summary>
-    /// <param name="constraintsRef">The dotted constraints reference (e.g. <c>GetTreeQueryParamsConstraints.limit</c>).</param>
-    /// <param name="field">The rule field (e.g. <c>min</c>, <c>maxLength</c>).</param>
-    /// <returns>The member-access expression.</returns>
-    private static ExpressionNode Ref(string constraintsRef, string field)
-    {
-        var parts = constraintsRef.Split('.');
-        ExpressionNode current = Id(parts[0]);
-        for (var i = 1; i < parts.Length; i++)
-            current = Member(current, parts[i]);
-        return Member(current, field);
     }
 
     /// <summary>Converts an OpenAPI default value to a Zod <c>.default(...)</c> literal argument.</summary>
@@ -183,43 +138,81 @@ internal sealed class ZodSchemaExpressionBuilder
         _ => null
     };
 
-    private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types)
+    /// <summary>Builds an alternative schema, collapsing degenerate unions.</summary>
+    /// <param name="types">The alternative types.</param>
+    /// <param name="coerce">Whether parameter input is coerced.</param>
+    /// <param name="constraints">Constraints applying to compatible primitive alternatives.</param>
+    /// <param name="constraintsRef">An optional reference to exported constraints.</param>
+    /// <param name="exclusive">Whether exactly one alternative must match.</param>
+    /// <returns>The combined schema expression.</returns>
+    private ExpressionNode BuildUnion(IReadOnlyList<IrType> types, bool coerce, IrPropertyConstraints? constraints, string? constraintsRef, bool exclusive)
     {
-        // z.intersection(a, b); для >2 членов сворачиваем через .and(...).
+        if (exclusive)
+            return ExclusiveUnionAst.Zod(types.Select(type => Build(type, coerce, constraints, constraintsRef)).ToArray());
+        return types.Count switch
+        {
+            0 => Call(Member(Id("z"), "unknown")),
+            1 => Build(types[0], coerce, constraints, constraintsRef),
+            _ => Call(Member(Id("z"), "union"), new ArrayLiteralExpressionNode(
+                types.Select(type => Build(type, coerce, constraints, constraintsRef)).ToImmutableList()))
+        };
+    }
+
+    /// <summary>Builds binary intersections while preserving parameter coercion through every arm.</summary>
+    /// <param name="types">The intersecting types.</param>
+    /// <param name="coerce">Whether parameter input is coerced.</param>
+    /// <param name="constraints">Constraints applying to compatible primitive members.</param>
+    /// <param name="constraintsRef">An optional reference to exported constraints.</param>
+    /// <returns>The combined schema expression.</returns>
+    private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types, bool coerce, IrPropertyConstraints? constraints, string? constraintsRef)
+    {
         if (types.Count == 0)
             return Call(Member(Id("z"), "unknown"));
         if (types.Count == 1)
-            return Build(types[0]);
+            return Build(types[0], coerce, constraints, constraintsRef);
 
-        var result = Call(Member(Id("z"), "intersection"), Build(types[0]), Build(types[1]));
+        var result = Call(Member(Id("z"), "intersection"),
+            Build(types[0], coerce, constraints, constraintsRef), Build(types[1], coerce, constraints, constraintsRef));
         for (var i = 2; i < types.Count; i++)
-            result = Call(Member(result, "and"), Build(types[i]));
+            result = Call(Member(result, "and"), Build(types[i], coerce, constraints, constraintsRef));
         return result;
     }
 
-    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, bool coerce = false) =>
+    /// <summary>Builds primitives using the same format and constraint rules as model schemas.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="coerce">Whether parameter input is coerced.</param>
+    /// <param name="constraints">Constraints on the primitive value.</param>
+    /// <param name="constraintsRef">An optional reference to exported constraints.</param>
+    /// <returns>The primitive schema expression.</returns>
+    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, bool coerce, IrPropertyConstraints? constraints, string? constraintsRef) =>
         kind switch
         {
-            IrPrimitiveKind.String => Call(Member(Id("z"), "string")),
-            IrPrimitiveKind.Number => ZodNumber(coerce),
-            IrPrimitiveKind.Integer or IrPrimitiveKind.Long => Call(Member(ZodNumber(coerce), "int")),
-            IrPrimitiveKind.Boolean => coerce
-                ? Call(Member(Member(Id("z"), "coerce"), "boolean"))
-                : Call(Member(Id("z"), "boolean")),
-            IrPrimitiveKind.DateTime or IrPrimitiveKind.Date or IrPrimitiveKind.Time => Call(Member(Id("z"), "string")),
-            IrPrimitiveKind.Uuid => _uuidFormat switch
-            {
-                TypeScriptOptionIds.UuidFormat.String => Call(Member(Id("z"), "string")),
-                TypeScriptOptionIds.UuidFormat.Regex => Call(Member(Call(Member(Id("z"), "string")), "regex"),
-                    Id(TypeScriptOptionIds.UuidFormat.RegexConstName)),
-                _ => Call(Member(Call(Member(Id("z"), "string")), "uuid"))
-            },
-            IrPrimitiveKind.Void => Call(Member(Id("z"), "void")),
-            IrPrimitiveKind.Null => Call(Member(Id("z"), "null")),
-            _ => Call(Member(Id("z"), "unknown"))
+            IrPrimitiveKind.Boolean when coerce => BuildBooleanParameter(),
+            IrPrimitiveKind.Binary =>
+                Call(Member(Id("z"), "instanceof"), Id("Blob")),
+            IrPrimitiveKind.ByteArray =>
+                Call(Member(Id("z"), "instanceof"), Id("Uint8Array")),
+            IrPrimitiveKind.File =>
+                Call(Member(Id("z"), "instanceof"), Id("File")),
+            IrPrimitiveKind.Any => Call(Member(Id("z"), "unknown")),
+            _ => ZodExpressionBuilder.BuildPrimitiveExpression(kind, useBigInt: false,
+                constraints, constraintsRef, _uuidFormat, coerceNumbers: coerce).Expression
         };
 
-    /// <summary><c>z.coerce.number()</c> when <paramref name="coerce"/>, otherwise <c>z.number()</c>.</summary>
-    private static ExpressionNode ZodNumber(bool coerce) =>
-        coerce ? Call(Member(Member(Id("z"), "coerce"), "number")) : Call(Member(Id("z"), "number"));
+    /// <summary>Parses OpenAPI boolean strings without treating the nonempty string "false" as true.</summary>
+    /// <returns>A boolean schema accepting booleans and the exact strings "true" and "false".</returns>
+    private static ExpressionNode BuildBooleanParameter()
+    {
+        var strings = Call(Member(Id("z"), "enum"), new ArrayLiteralExpressionNode(
+            ImmutableList.Create<ExpressionNode>(
+                new LiteralExpressionNode("true", LiteralKind.String),
+                new LiteralExpressionNode("false", LiteralKind.String))));
+        var transform = new ArrowFunctionExpressionNode(
+            ImmutableList.Create(new ParameterDeclarationNode(new IdentifierNode("value"), type: null, isRequired: true)),
+            new BinaryExpressionNode(Id("value"), BinaryOperator.Equal, new LiteralExpressionNode("true", LiteralKind.String)));
+        return Call(Member(Id("z"), "union"), new ArrayLiteralExpressionNode(
+            ImmutableList.Create<ExpressionNode>(
+                Call(Member(Id("z"), "boolean")),
+                Call(Member(strings, "transform"), transform))));
+    }
 }

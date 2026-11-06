@@ -30,13 +30,6 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
     /// <summary>Renderer instance built once per Step with the Chain-of-Responsibility node renderers.</summary>
     protected TypeScriptAstRenderer Renderer { get; }
 
-    /// <summary>
-    /// Models from the active IR document, keyed by generated model name, for transport builders that need request
-    /// body property metadata such as multipart field names.
-    /// </summary>
-    protected IReadOnlyDictionary<string, IrModel> ModelsByName { get; private set; } =
-        new Dictionary<string, IrModel>(StringComparer.Ordinal);
-
     /// <inheritdoc />
     public abstract string Name { get; }
 
@@ -85,7 +78,6 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
-        ModelsByName = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
 
         foreach (var client in context.IrDocument.Clients)
         {
@@ -93,7 +85,7 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
             {
                 ct.ThrowIfCancellationRequested();
 
-                var sourceFile = BuildOperationSourceFile(operation, fileOrg, opts);
+                var sourceFile = BuildOperationSourceFile(context.DocumentContext, operation, fileOrg, opts);
                 var content = Renderer.Render(sourceFile);
                 var fileName = NamingConverter.ToCamelCase(operation.OriginalMethodName);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}{FileSuffix}";
@@ -108,7 +100,13 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
     /// Build a <see cref="SourceFileNode"/> for a single operation. Implementations
     /// instantiate their transport-specific AST builder and delegate.
     /// </summary>
+    /// <param name="documentContext">The shared indexes of the finalized IR document.</param>
+    /// <param name="operation">The operation to generate.</param>
+    /// <param name="fileOrg">The output source layout.</param>
+    /// <param name="options">The selected transport and validation settings.</param>
+    /// <returns>The transport operation source file.</returns>
     protected abstract SourceFileNode BuildOperationSourceFile(
+        IrDocumentContext documentContext,
         IrOperation operation,
         FileOrganization fileOrg,
         TypeScriptGenerationOptions? options);

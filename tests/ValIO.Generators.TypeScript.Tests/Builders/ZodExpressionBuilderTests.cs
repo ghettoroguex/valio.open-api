@@ -39,9 +39,9 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.boolean()");
     }
 
-    /// <summary>Checks that number schemas do not coerce input.</summary>
+    /// <summary>Verifies model numbers use strict JSON number semantics by default.</summary>
     [Test]
-    public void Number_NoConstraints_StrictNumber()
+    public void Number_NoConstraints_UsesStrictNumber()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false);
         Render(schema).Should().Be("z.number()");
@@ -54,7 +54,7 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.null()");
     }
 
-    /// <summary>Checks integer validation without input coercion.</summary>
+    /// <summary>Verifies integers reject fractional values without coercing strings.</summary>
     [Test]
     public void Integer_AddsIntRefinement()
     {
@@ -62,7 +62,7 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Contain("z.number()").And.Contain(".int()");
     }
 
-    /// <summary>Checks that long values use a strict number when bigint is disabled.</summary>
+    /// <summary>Verifies int64 validation retains integer semantics when bigint is disabled.</summary>
     [Test]
     public void Long_WithoutBigInt_FallsBackToNumber()
     {
@@ -70,7 +70,23 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.number().int()");
     }
 
-    /// <summary>Checks that bigint values are not coerced.</summary>
+    /// <summary>Verifies response schemas can validate numeric values without parameter coercion.</summary>
+    [Test]
+    public void Number_WithCoercionDisabled_UsesStrictNumber()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false, coerceNumbers: false);
+        Render(schema).Should().Be("z.number()");
+    }
+
+    /// <summary>Verifies void does not silently become an unconstrained value.</summary>
+    [Test]
+    public void Void_UsesVoidSchema()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Void, useBigInt: false);
+        Render(schema).Should().Be("z.void()");
+    }
+
+    /// <summary>Verifies bigint mode validates bigint values without implicit boundary conversion.</summary>
     [Test]
     public void Long_WithBigInt_UsesStrictBigint()
     {
@@ -78,33 +94,56 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.bigint()");
     }
 
+    /// <summary>Verifies parameter numeric coercion remains available explicitly.</summary>
+    [Test]
+    public void Number_WithCoercionEnabled_UsesCoercedNumber()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false, coerceNumbers: true);
+        Render(schema).Should().Be("z.coerce.number()");
+    }
+
+    /// <summary>Verifies UUIDs share the canonical text predicate with other validator libraries.</summary>
     [Test]
     public void Uuid_AddsUuidRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Uuid, useBigInt: false);
-        Render(schema).Should().Be("z.string().uuid()");
+        Render(schema).Should().Contain("z.string().refine(").And.Contain("[0-9a-fA-F]{8}");
     }
 
+    /// <summary>Verifies timestamps use the shared RFC 3339 lexical, calendar, and offset checks.</summary>
     [Test]
     public void DateTime_AddsDatetimeWithOffset()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.DateTime, useBigInt: false);
         var rendered = Render(schema);
-        rendered.Should().Contain("z.string()").And.Contain(".datetime(").And.Contain("offset: true");
+        rendered.Should().Contain("z.string().refine(").And.Contain("[Tt]").And.Contain("getUTCMinutes()");
     }
 
+    /// <summary>Verifies calendar dates are checked without library-specific ISO interpretation.</summary>
     [Test]
     public void Date_AddsDateRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Date, useBigInt: false);
-        Render(schema).Should().Be("z.string().date()");
+        Render(schema).Should().Contain("z.string().refine(").And.Contain(".toISOString().slice(");
     }
 
+    /// <summary>Verifies full times require an explicit RFC 3339 timezone.</summary>
     [Test]
     public void Time_AddsTimeRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Time, useBigInt: false);
-        Render(schema).Should().Be("z.string().time()");
+        Render(schema).Should().Contain("z.string().refine(").And.Contain("[Zz]");
+    }
+
+    /// <summary>Verifies Zod 3 string constraints are applied before the shared predicate introduces a ZodEffects wrapper.</summary>
+    [Test]
+    public void FormattedString_AppliesConstraintsBeforeRefinement()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Date, useBigInt: false,
+            constraints: new IrPropertyConstraints { MinLength = 10, MaxLength = 10, Pattern = "^2024" });
+        var rendered = Render(schema);
+        rendered.Should().Contain("z.string().min(10).max(10).regex(").And.Contain(".refine(");
+        rendered.IndexOf(".regex(", StringComparison.Ordinal).Should().BeLessThan(rendered.IndexOf(".refine(", StringComparison.Ordinal));
     }
 
     [Test]

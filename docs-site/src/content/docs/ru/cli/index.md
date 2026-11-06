@@ -11,8 +11,8 @@ zip-архив.
 
 ## Подкоманды
 
-- [`valio generate`](./generate/) — сгенерировать код по OpenAPI-схеме
-- [`valio validate`](./validate/) — разобрать схему и вывести её метаданные
+- [`valio generate`](/ru/cli/generate/) — сгенерировать код по OpenAPI-схеме
+- [`valio validate`](/ru/cli/validate/) — разобрать схему и вывести её метаданные
 
 ## Глобальные опции
 

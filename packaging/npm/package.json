@@ -1,0 +1,14 @@
+{
+  "name": "valio-npm-build",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build tools for the ValIO npm distribution; never published.",
+  "scripts": {
+    "build": "tsc -p valio/tsconfig.json",
+    "check": "tsc --noEmit -p valio/tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^26.2.0"
+  }
+}

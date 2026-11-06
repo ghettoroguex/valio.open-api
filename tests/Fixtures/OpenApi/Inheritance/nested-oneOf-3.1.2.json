@@ -1,0 +1,76 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "First": {
+        "type": "object",
+        "required": [
+          "firstValue"
+        ],
+        "properties": {
+          "firstValue": {
+            "type": "string"
+          }
+        }
+      },
+      "Second": {
+        "type": "object",
+        "required": [
+          "secondValue"
+        ],
+        "properties": {
+          "secondValue": {
+            "type": "integer"
+          }
+        }
+      },
+      "Base": {
+        "type": "object",
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/First"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Second"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Child": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Base"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

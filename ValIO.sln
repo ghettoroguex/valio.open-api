@@ -76,6 +76,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Ruby.Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Core.Tests", "tests\ValIO.Core.Tests\ValIO.Core.Tests.csproj", "{3FDD8D4C-F8C1-4D9F-9871-7AF5DB4513E6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Cpp.CompileTests", "tests\ValIO.Generators.Cpp.CompileTests\ValIO.Generators.Cpp.CompileTests.csproj", "{287AC884-8735-46FC-B7BF-A1B107C442A0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -518,6 +520,18 @@ Global
 		{3FDD8D4C-F8C1-4D9F-9871-7AF5DB4513E6}.Release|x64.Build.0 = Release|Any CPU
 		{3FDD8D4C-F8C1-4D9F-9871-7AF5DB4513E6}.Release|x86.ActiveCfg = Release|Any CPU
 		{3FDD8D4C-F8C1-4D9F-9871-7AF5DB4513E6}.Release|x86.Build.0 = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|x64.Build.0 = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Debug|x86.Build.0 = Debug|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|x64.ActiveCfg = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|x64.Build.0 = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|x86.ActiveCfg = Release|Any CPU
+		{287AC884-8735-46FC-B7BF-A1B107C442A0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -551,5 +565,6 @@ Global
 		{06825461-1553-465F-8BC5-DA53F0C160F1} = {B0000000-0000-0000-0000-000000000001}
 		{82CDDBC1-1914-454C-882A-57B86633EAE9} = {B0000000-0000-0000-0000-000000000002}
 		{3FDD8D4C-F8C1-4D9F-9871-7AF5DB4513E6} = {B0000000-0000-0000-0000-000000000002}
+		{287AC884-8735-46FC-B7BF-A1B107C442A0} = {B0000000-0000-0000-0000-000000000002}
 	EndGlobalSection
 EndGlobal

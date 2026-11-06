@@ -40,7 +40,8 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     public bool UseOptionalChaining { get; }
     
     
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Object, Member };
+    /// <inheritdoc/>
+    public override IReadOnlyList<AstNode> Children => [Object, Member, .. base.Children];
     
     /// <summary>
     /// Конструктор

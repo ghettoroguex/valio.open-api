@@ -35,7 +35,7 @@ function printMissingBinaryError(info: PlatformInfo | null, detail?: string): vo
       "  - You are on a platform we do not ship a prebuilt binary for.",
       "",
       "Fixes:",
-      "  - Reinstall:  npm install -g @valio-projects/valio",
+      "  - Reinstall:  npm install -g @val.io/valio",
       "  - Or install via .NET:  dotnet tool install --global ValIO.Cli",
       "",
     ].join("\n"),

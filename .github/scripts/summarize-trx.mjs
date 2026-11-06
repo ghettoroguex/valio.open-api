@@ -13,7 +13,7 @@
 // authoritative pass/fail signal is `dotnet test`'s own exit code.
 // -----------------------------------------------------------------------------
 
-import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /** Directories that never contain test output and are expensive to walk. */
@@ -82,9 +82,13 @@ function parseTrx(path) {
   const tag = counters[0];
 
   const failures = [];
+  let skippedResults = 0;
   const resultRe = /<UnitTestResult\b[^>]*>/g;
   let match;
   while ((match = resultRe.exec(xml)) !== null) {
+    // NUnit's adapter emits NotExecuted results while leaving the corresponding
+    // aggregate counter at zero. Count the actual outcomes as well.
+    if (/outcome="(?:NotExecuted|Inconclusive)"/.test(match[0])) skippedResults += 1;
     if (!/outcome="Failed"/.test(match[0])) continue;
     const name = /testName="([^"]*)"/.exec(match[0]);
     if (name) failures.push(name[1]);
@@ -94,8 +98,9 @@ function parseTrx(path) {
     total: attr(tag, "total"),
     passed: attr(tag, "passed"),
     failed: attr(tag, "failed"),
-    // "Not executed" covers both explicitly skipped and inconclusive tests.
-    skipped: attr(tag, "notExecuted") + attr(tag, "inconclusive"),
+    // Some TRX producers supply counters without individual result elements.
+    // Taking the larger count supports both representations without double-counting.
+    skipped: Math.max(skippedResults, attr(tag, "notExecuted") + attr(tag, "inconclusive")),
     failures,
   };
 }

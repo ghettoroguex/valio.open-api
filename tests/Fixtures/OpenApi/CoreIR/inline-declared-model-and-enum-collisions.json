@@ -1,0 +1,48 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "inline-declared-model-and-enum-collisions.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Container": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "object",
+            "properties": {
+              "nested": {
+                "type": "string"
+              }
+            }
+          },
+          "mode": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "DetailsInlineModel": {
+        "type": "object",
+        "properties": {
+          "declared": {
+            "type": "integer"
+          }
+        }
+      },
+      "ModeInlineModel": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  }
+}

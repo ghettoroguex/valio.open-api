@@ -204,18 +204,23 @@ worked examples of this end-to-end thread.
 
 Tests live under `tests/` (one project per source assembly), NUnit 4 + FluentAssertions.
 The TypeScript contract tests execute generated schemas with Zod 3 and Zod 4 and compile them
-with strict TypeScript. Node.js 18+ and the pinned runtime dependencies are required; missing
+with strict TypeScript. Node.js 22.19+ and the pinned runtime dependencies are required; missing
 dependencies fail these tests rather than skipping validation. CI prepares them on every host.
 Before a local test run (PowerShell):
 
 ```powershell
 npm ci --ignore-scripts --prefix tests/ValIO.Generators.TypeScript.Tests/Runtime
 $env:VALIO_TEST_NODE_MODULES = Join-Path (Get-Location) 'tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules'
+$env:VALIO_VALIDATOR_NODE_MODULES = $env:VALIO_TEST_NODE_MODULES
 ```
 
 In a POSIX shell, export `VALIO_TEST_NODE_MODULES="$PWD/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules"`
-after the same `npm ci` command. Zod 3 is installed only as a compatibility-test alias; it is
-not a generator or generated-client runtime dependency.
+and `VALIO_VALIDATOR_NODE_MODULES="$VALIO_TEST_NODE_MODULES"` after the same `npm ci` command.
+The same pinned installation supplies real transport and validator declarations for the complete
+TypeScript matrix, including Angular 20 with TypeScript 5.8 and Next.js 16. Node.js 22.19+ is required.
+Zod 3 and 4 are installed as compatibility-test aliases. The test compiler and runtime loader
+resolve `zod` and `zod/v4` to those exact versions without rewriting the generated sources;
+these aliases are not generator or generated-client runtime dependencies.
 
 Run:
 
@@ -292,6 +297,30 @@ add an `XxxClientStep : TypeScriptClientStepBase` with a `FileSuffix` (e.g. `.xx
 in `TypeScriptGeneratorPlugin.CreatePipeline`, add the transport id to `TypeScriptOptionIds.Transport`
 + a descriptor choice + normaliser alias, and add tests + a docs/stack page. Reuse the shared
 `TypeScriptParamsAstBuilder` / `TypeScriptResultsAstBuilder` for params/results so names line up.
+
+### 10b-cpp. C++ runtime profiles (`ue` | `std`)
+
+The C++ plugin hosts two runtime profiles behind one option (`runtime`); pipeline steps
+self-gate on `context.PluginOptions` (`CppUe*Step` run when `Runtime != Std`, `CppStd*Step`
+when `Runtime == Std`), so the pipeline always contains both groups — the TS-transport pattern
+applied to profiles. Adding a third profile: extend `CppRuntimeProfile` + `CppOptionsDescriptor`,
+add a `Cpp<X>Step` group gated on the new value, and builders under `Ast/Builders/<X>/`.
+
+The **std profile** (cpp-httplib + nlohmann_json) keeps model headers JSON-free
+(`Models/*.h` are std-only; `Serializers/*Json.h/.cpp` own the wire names via ADL
+`to_json`/`from_json`; `<httplib.h>` lives in one TU — `Runtime/ValIOHttp.cpp`).
+Its canonical runtime files are raw-string templates in `Runtime/StdRuntimeTemplates.cs`
+(precedent: `CSharpClientStep`'s ApiException/multipart factory) emitted once per project
+by `CppStdRuntimeStep`. Compile-verified against exact pins cpp-httplib v0.18.3 +
+nlohmann_json v3.12.0 on C++17/20/23 by `tests/ValIO.Generators.Cpp.CompileTests`
+(cmake required; `Assert.Ignore` when absent; CI job `cpp-compile-fixture`).
+
+Universal declaration nodes live in Core AST (`NamespaceDeclarationNode`,
+`ClassDeclarationNode`, `StructDeclarationNode`, `FieldDeclarationNode` — promoted from
+the C# generator; `EnumDeclarationNode.UnderlyingType`, `EnumMemberDeclarationNode.WireValue`,
+`MethodDeclarationNode.IsStatic/IsVirtual/IsAbstract/IsConst/Noexcept`). New languages must
+reuse them instead of duplicating per-language copies; remaining per-language duplicates
+(Java/Kotlin/etc. class nodes) are documented backlog.
 
 ### 10c. Add a new validation library
 

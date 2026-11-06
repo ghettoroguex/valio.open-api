@@ -1,0 +1,27 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "component-name-collision.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "A.B": {
+        "type": "object",
+        "properties": {
+          "invalidArray": {
+            "type": "array"
+          }
+        }
+      },
+      "A-B": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  }
+}

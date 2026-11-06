@@ -10,8 +10,8 @@ translationKey: cli-overview
 
 ## 子命令
 
-- [`valio generate`](./generate/) —— 从 OpenAPI 架构生成代码
-- [`valio validate`](./validate/) —— 解析架构并打印元数据
+- [`valio generate`](/zh-cn/cli/generate/) —— 从 OpenAPI 架构生成代码
+- [`valio validate`](/zh-cn/cli/validate/) —— 解析架构并打印元数据
 
 ## 全局选项
 

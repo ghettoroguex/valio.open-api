@@ -20,10 +20,11 @@ public class CSharpAstBuilderEnumSerializationTests
     private CSharpAstBuilder _builder = null!;
     private CSharpAstRenderer _renderer = null!;
 
+    /// <summary>Creates a renderer and a builder with the explicit fragment document context.</summary>
     [SetUp]
     public void Setup()
     {
-        _builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        _builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         _renderer = new CSharpAstRenderer();
     }
 

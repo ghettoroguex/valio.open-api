@@ -44,7 +44,7 @@ public sealed class MswStep : ICodeGenerationStep
     {
         ct.ThrowIfCancellationRequested();
 
-        var builder = new MswHandlersAstBuilder(_namingConverter);
+        var builder = new MswHandlersAstBuilder(context.DocumentContext, _namingConverter);
         var fileOrg = context.Configuration.FileOrganization;
 
         var sourceFile = builder.BuildHandlersSourceFile(context.IrDocument, fileOrg);

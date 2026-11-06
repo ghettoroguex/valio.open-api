@@ -29,6 +29,8 @@ public class GotClientStepTests
             f.RelativePath.EndsWith(".got.ts", StringComparison.Ordinal));
     }
 
+    /// <summary>Verifies GotClient_EmitsGotCallWithResponseTypeJson with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task GotClient_EmitsGotCallWithResponseTypeJson()
     {
@@ -38,7 +40,7 @@ public class GotClientStepTests
         var got = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.got.ts", StringComparison.Ordinal));
         got.Content.Should().Contain("import got from \"got\"");
-        got.Content.Should().Contain("await got(");
+        got.Content.Should().Contain("await httpClient(");
         got.Content.Should().Contain("responseType");
         got.Content.Should().Contain("throwHttpErrors");
         got.Content.Should().Contain("response.statusCode");

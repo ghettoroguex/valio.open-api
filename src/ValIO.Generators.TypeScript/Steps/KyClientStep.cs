@@ -23,10 +23,12 @@ public sealed class KyClientStep : TypeScriptClientStepBase
     public KyClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
         : base(namingConverter, nodeRenderers) { }
 
+    /// <inheritdoc />
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
-        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
+        IrDocumentContext documentContext, IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        var builder = new KyClientAstBuilder(NamingConverter, options);
+        var builder = new KyClientAstBuilder(documentContext, NamingConverter, options);
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

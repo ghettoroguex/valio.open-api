@@ -34,38 +34,23 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         return opts?.ValidationLibrary == "valibot";
     }
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
-        var builder = new ValibotSchemaSourceFileBuilder(_namingConverter, modelsPath, opts?.UuidFormat);
+        var documentContext = context.DocumentContext;
+        var builder = new ValibotSchemaSourceFileBuilder(documentContext, _namingConverter, modelsPath, opts?.UuidFormat);
         var renderer = new TypeScriptAstRenderer(_nodeRenderers);
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(model => model.Name);
-        var processed = new HashSet<string>();
-
-        foreach (var name in orderedNames)
+        foreach (var model in documentContext.ModelsInDependencyOrder)
         {
             ct.ThrowIfCancellationRequested();
-
-            if (!byName.TryGetValue(name, out var model))
-                continue;
-
             AddModelSchema(context, builder, renderer, model, modelsPath, fileOrg.SeparateModels);
-            processed.Add(name);
         }
 
-        foreach (var model in context.IrDocument.Models)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            if (!processed.Contains(model.Name))
-                AddModelSchema(context, builder, renderer, model, modelsPath, fileOrg.SeparateModels);
-        }
-
-        foreach (var irEnum in context.IrDocument.Enums)
+        foreach (var irEnum in documentContext.Document.Enums)
         {
             ct.ThrowIfCancellationRequested();
             AddEnumSchema(context, builder, renderer, irEnum, modelsPath, fileOrg.SeparateModels);

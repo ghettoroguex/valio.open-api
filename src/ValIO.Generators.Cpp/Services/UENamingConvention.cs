@@ -11,12 +11,22 @@ namespace ValIO.Generators.Cpp.Services;
 public sealed class UENamingConvention
 {
     /// <summary>
+    /// True if <paramref name="pascal"/> already carries the Hungarian-notation prefix
+    /// <paramref name="prefix"/> (prefix followed by an uppercase letter, e.g. "FFoo", not just
+    /// any identifier that happens to start with the same letter, e.g. "Furniture").
+    /// </summary>
+    private static bool HasUePrefix(string pascal, char prefix)
+    {
+        return pascal.Length > 1 && pascal[0] == prefix && char.IsUpper(pascal[1]);
+    }
+
+    /// <summary>
     /// Имя структуры (F-префикс): FMyModelDto
     /// </summary>
     public string StructName(string modelName)
     {
         var pascal = ToPascalCase(modelName);
-        return pascal.StartsWith('F') ? pascal : $"F{pascal}";
+        return HasUePrefix(pascal, 'F') ? pascal : $"F{pascal}";
     }
 
     /// <summary>
@@ -25,7 +35,7 @@ public sealed class UENamingConvention
     public string ClassName(string name)
     {
         var pascal = ToPascalCase(name);
-        return pascal.StartsWith('U') ? pascal : $"U{pascal}";
+        return HasUePrefix(pascal, 'U') ? pascal : $"U{pascal}";
     }
 
     /// <summary>
@@ -34,7 +44,7 @@ public sealed class UENamingConvention
     public string EnumName(string name)
     {
         var pascal = ToPascalCase(name);
-        return pascal.StartsWith('E') ? pascal : $"E{pascal}";
+        return HasUePrefix(pascal, 'E') ? pascal : $"E{pascal}";
     }
 
     /// <summary>

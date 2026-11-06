@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -6,6 +7,7 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
@@ -16,17 +18,22 @@ namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 /// <summary>
 /// Builds Valibot schema source files as TypeScript AST.
 /// </summary>
-public sealed class ValibotSchemaSourceFileBuilder
+public sealed class ValibotSchemaSourceFileBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly ValibotAstBuilder _builder;
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
-
-    public ValibotSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
+    /// <summary>Creates a schema source builder bound to one finalized document context.</summary>
+    /// <param name="documentContext">The shared immutable declaration indexes.</param>
+    /// <param name="namingConverter">The naming rules for declaration file stems.</param>
+    /// <param name="modelsPath">The configured model output directory.</param>
+    /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
+    public ValibotSchemaSourceFileBuilder(IrDocumentContext documentContext, INamingConverter namingConverter,
+        string modelsPath = "models", string? uuidFormat = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
@@ -34,11 +41,14 @@ public sealed class ValibotSchemaSourceFileBuilder
         _builder = new ValibotAstBuilder(uuidFormat);
     }
 
+    /// <summary>Builds a model schema with dependencies resolved from the complete input document.</summary>
+    /// <param name="model">The model being validated.</param>
+    /// <param name="separateModels">Whether model files occupy individual directories.</param>
+    /// <returns>The complete schema source AST.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
     public SourceFileNode BuildModelSchemaSourceFile(IrModel model, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(model);
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
 
         var schemaName = GetSchemaName(model.Name);
         var isRecursive = IsSelfRecursive(model);
@@ -105,11 +115,14 @@ public sealed class ValibotSchemaSourceFileBuilder
         }
     }
 
+    /// <summary>Builds a schema referencing the enum's existing values export.</summary>
+    /// <param name="enumModel">The enum being validated.</param>
+    /// <param name="separateModels">Whether enum files occupy individual directories.</param>
+    /// <returns>The complete enum schema source AST.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="enumModel"/> is null.</exception>
     public SourceFileNode BuildEnumSchemaSourceFile(IrEnum enumModel, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(enumModel);
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, enumModel);
 
         var schemaName = GetSchemaName(enumModel.Name);
 
@@ -166,6 +179,11 @@ public sealed class ValibotSchemaSourceFileBuilder
             kind: ImportKind.Namespace));
     }
 
+    /// <summary>Builds schema imports using original declaration names from the shared context.</summary>
+    /// <param name="model">The model whose dependencies are imported.</param>
+    /// <param name="separateModels">Whether model files occupy individual directories.</param>
+    /// <param name="includeOwnModelType">Whether a recursive schema needs its model type annotation.</param>
+    /// <returns>The required runtime and type imports.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IrModel model, bool separateModels, bool includeOwnModelType = false)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
@@ -191,8 +209,7 @@ public sealed class ValibotSchemaSourceFileBuilder
 
         foreach (var dependency in dependencies)
         {
-            // Имя файла зависимости — от исходного (до affix) имени; спецификатор импорта affix.
-            var depFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(dependency, dependency));
+            var depFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, dependency));
             var importPath = separateModels
                 ? $"../{depFileName}/{depFileName}.schema"
                 : $"./{depFileName}.schema";

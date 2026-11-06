@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Plugins;
 using ValIO.Generators.CSharp.Ast.Renderers;
@@ -8,16 +9,20 @@ using ValIO.Generators.CSharp.Steps;
 namespace ValIO.Generators.CSharp;
 
 /// <summary>
-/// Plugin для генерации C# кода из IR.
-/// Регистрирует себя через AddGeneratorPlugin&lt;CSharpGeneratorPlugin&gt;().
+/// Creates C# generation pipelines with independently owned renderers and shared request indexes.
 /// </summary>
 public sealed class CSharpGeneratorPlugin : IGeneratorPlugin
 {
+    /// <inheritdoc />
     public string LanguageId => "csharp";
+    /// <inheritdoc />
     public string DisplayName => "C#";
+    /// <inheritdoc />
     public IReadOnlyList<string> LanguageAliases => ["cs", "csharp", "c#"];
+    /// <inheritdoc />
     public IGeneratorOptionsDescriptor OptionsDescriptor { get; } = new CSharpOptionsDescriptor();
 
+    /// <inheritdoc />
     public ICodeGenerationPipeline CreatePipeline(IServiceProvider services)
     {
         var namingConverter = services.GetRequiredService<INamingConverter>();
@@ -31,8 +36,9 @@ public sealed class CSharpGeneratorPlugin : IGeneratorPlugin
         return new CodeGenerationPipeline(steps);
     }
 
+    /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
     {
-        // Дополнительные сервисы CSharp-плагина при необходимости
+        services.TryAddTransient<ICSharpAstRenderer, CSharpAstRenderer>();
     }
 }

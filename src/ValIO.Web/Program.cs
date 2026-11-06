@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Localization;
 using MudBlazor.Services;
 using ValIO.Application.DependencyInjection;
@@ -43,7 +45,20 @@ builder.Services.Configure<RequestLocalizationOptions>(o =>
 
 builder.Services.AddHealthChecks();
 
+// Trust forwarded request information only from explicitly configured proxies.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    var proxies = builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [];
+    foreach (var proxy in proxies.Where(value => !string.IsNullOrWhiteSpace(value)))
+    {
+        options.KnownProxies.Add(IPAddress.Parse(proxy));
+    }
+});
+
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -77,5 +92,5 @@ app.MapGet("/culture/set", CultureEndpoint.SetCulture).WithName("SetCulture");
 
 app.Run();
 
-// expose Program for testing
+/// <summary>Exposes the web application entry point to integration test hosts.</summary>
 public partial class Program { }

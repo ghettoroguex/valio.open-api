@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -12,29 +13,39 @@ using ValIO.Generators.Cpp.Services;
 
 namespace ValIO.Generators.Cpp.Ast.Builders;
 
-/// <summary>
-/// Строитель AST для типизированного Result struct из IrOperation.
-/// Генерирует CppHeaderFileNode, содержащий UStructDeclarationNode для результата API-метода.
-/// Паттерн: StatusCode + SuccessBody + ErrorBody + IsSuccess()
-/// </summary>
-public sealed class UEResultAstBuilder
+/// <summary>Builds Unreal result headers with shared document declaration indexes.</summary>
+public sealed class UEResultAstBuilder : AstBuilderBase
 {
+    /// <summary>Maps types using the shared document context.</summary>
     private readonly UETypeMapper _typeMapper;
+    /// <summary>Supplies Unreal identifier and path naming.</summary>
     private readonly UENamingConvention _naming;
+    /// <summary>Supplies the selected Unreal generation options.</summary>
     private readonly CppGenerationOptions _options;
 
-    public UEResultAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options)
+    /// <summary>Requires one document context shared with the type mapper.</summary>
+    /// <param name="typeMapper">The document-aware Unreal type mapper.</param>
+    /// <param name="naming">The Unreal identifier and file naming rules.</param>
+    /// <param name="options">The Unreal generation options.</param>
+    /// <param name="documentContext">The mandatory finalized document indexes.</param>
+    /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+    /// <exception cref="ArgumentException">The mapper belongs to a different document context.</exception>
+    public UEResultAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options, IrDocumentContext documentContext) : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        if (!ReferenceEquals(typeMapper.DocumentContext, documentContext))
+            throw new ArgumentException("The mapper and builder must share a document context.", nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
-    /// <summary>
-    /// Строит CppHeaderFileNode для Result-структуры операции
-    /// </summary>
-    public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
+    /// <summary>Builds the operation header using this document's enum references.</summary>
+    /// <param name="operation">The operation contract to emit.</param>
+    /// <param name="clientName">The owning client's generated name.</param>
+    /// <returns>The generated Unreal header AST.</returns>
+    public CppHeaderFileNode Build(IrOperation operation, string clientName)
     {
+        var enumNames = EnumNames;
         var resultName = _naming.ResultStructName(operation.MethodName);
         // File name uses the ORIGINAL (pre-affix) method name so the emitted file/include doesn't change with affixes.
         var fileName = _naming.ResultFileName(operation.OriginalMethodName);

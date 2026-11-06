@@ -41,6 +41,8 @@ public class ParamsValidationLibraryTests
         return (client, paramsSchema);
     }
 
+    /// <summary>Verifies Zod imports a named parameter schema and uses the selected validation runtime.</summary>
+    /// <param name="validation">The selected Zod major.</param>
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Zod_RouteParams_UseImportedNamedSchema(string validation)
@@ -49,7 +51,7 @@ public class ParamsValidationLibraryTests
         client.Should().Contain("GetPetByIdRouteParamsSchema.parse");
         client.Should().Contain(".params.schema");
         client.Should().NotContain("v.parse(");
-        client.Should().NotContain("Value.Parse(");
+        client.Should().NotContain("Value.Decode(");
         paramsSchema.Should().Contain("export const GetPetByIdRouteParamsSchema");
         paramsSchema.Should().Contain("z.object(");
     }
@@ -68,12 +70,13 @@ public class ParamsValidationLibraryTests
         paramsSchema.Should().Contain("v.object(");
     }
 
+    /// <summary>Verifies TypeBox validates against the parameter schema declared in its own module.</summary>
     [Test]
     public async Task TypeBox_RouteParams_ImportedNamedSchema_BuiltInParamsFile()
     {
         var (client, paramsSchema) = await GetPetByIdFilesAsync("typebox");
         client.Should().Contain("@sinclair/typebox");
-        client.Should().MatchRegex(@"Value\.Parse\(\s*GetPetByIdRouteParamsSchema");
+        client.Should().MatchRegex(@"Value\.Decode\(\s*GetPetByIdRouteParamsSchema");
         client.Should().Contain(".params.schema");
         client.Should().NotContain("Type.Object(");
         paramsSchema.Should().Contain("export const GetPetByIdRouteParamsSchema");

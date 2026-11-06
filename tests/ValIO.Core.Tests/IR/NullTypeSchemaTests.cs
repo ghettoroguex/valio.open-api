@@ -3,6 +3,7 @@ using NUnit.Framework;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Tests.TestHelpers;
+using ValIO.Tests.Fixtures;
 
 namespace ValIO.Core.Tests.IR;
 
@@ -27,14 +28,13 @@ public class NullTypeSchemaTests
             .Which.PrimitiveKind.Should().Be(IrPrimitiveKind.Null);
     }
 
-    // null внутри anyOf по-прежнему схлопывается в nullable (поведение не меняется).
+    /// <summary>Preserves nullable normalization when an anyOf contains an explicit null alternative.</summary>
+    /// <returns>The asynchronous assertion operation.</returns>
     [Test]
     public async Task NullInsideAnyOf_StaysNullable()
     {
-        var model = await IrTestHarness.BuildSingleModelAsync(
-            "M",
-            """{"type":"object","properties":{"capacity":{"anyOf":[{"type":"number"},{"type":"null"}]}}}""",
-            "3.1.0");
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/null-anyof-3.1.json"));
+        var model = ir.Models.Single(candidate => candidate.Name == "M");
 
         var capacity = model.Properties.Single(p => p.OriginalName == "capacity");
         capacity.Type.Should().BeOfType<IrNullableType>();

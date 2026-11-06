@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ValIO.Application.DependencyInjection;
+using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
-using ValIO.Generators.CSharp.Ast.Renderers;
 using ValIO.Generators.Dart;
 using ValIO.Generators.FSharp;
 using ValIO.Generators.Java;
@@ -21,11 +21,13 @@ namespace ValIO.Plugins.Bootstrap;
 /// </summary>
 public static class PluginsBootstrapExtensions
 {
+    /// <summary>Registers every supported language plugin and its services once per service collection.</summary>
+    /// <param name="services">The application services being composed.</param>
+    /// <returns>The supplied service collection for chaining.</returns>
+    /// <remarks>Repeated calls preserve existing registrations and do not configure plugin services again.</remarks>
     public static IServiceCollection AddAllGeneratorPlugins(this IServiceCollection services)
     {
-        // C# renderer dependency is needed before CSharp plugin is registered.
-        services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
-
+        services.AddGeneratorPlugin<CppGeneratorPlugin>();
         services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
         services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
         services.AddGeneratorPlugin<PythonGeneratorPlugin>();

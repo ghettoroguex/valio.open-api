@@ -214,6 +214,7 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
         };
     }
     
+    /// <inheritdoc/>
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
         var result = new StringBuilder();
@@ -226,13 +227,19 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
         {
             var prop = node.Properties[i];
             CodeFormatter.Append(result, objIndent);
-            
-            var propName = Visit(prop.Name);
-            result.Append(propName);
-            result.Append(": ");
-            
             var propValue = Visit(prop.Value);
-            result.Append(propValue);
+            if (prop.IsSpread)
+            {
+                result.Append("...");
+                result.Append(propValue);
+            }
+            else
+            {
+                var propName = Visit(prop.Name);
+                result.Append(propName);
+                result.Append(": ");
+                result.Append(propValue);
+            }
             
             if (i < node.Properties.Count - 1)
             {
@@ -248,10 +255,14 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
         return result.ToString();
     }
     
+    /// <inheritdoc/>
     public override string VisitPropertyAssignment(PropertyAssignmentNode node)
     {
-        var name = Visit(node.Name);
         var value = Visit(node.Value);
+        if (node.IsSpread)
+            return $"...{value}";
+
+        var name = Visit(node.Name);
         return $"{name}: {value}";
     }
     

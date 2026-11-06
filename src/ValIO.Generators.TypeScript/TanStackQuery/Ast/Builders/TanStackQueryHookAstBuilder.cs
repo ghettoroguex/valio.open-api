@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,7 +17,7 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Builders;
 /// Строит AST (SourceFileNode) для TanStack Query hook-файла.
 /// Использует AST-узлы для типов, тел методов и объявлений.
 /// </summary>
-public sealed class TanStackQueryHookAstBuilder
+public sealed class TanStackQueryHookAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
@@ -25,18 +26,27 @@ public sealed class TanStackQueryHookAstBuilder
     private readonly bool _hookUsesAxios;
     private readonly string _clientSuffix;
 
-    public TanStackQueryHookAstBuilder(
+    /// <summary>Creates a TanStackQueryHookAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="clientSuffix">The selected client transport suffix.</param>
+    /// <param name="resultSuffix">The optional operation result type suffix.</param>
+    /// <param name="resultPrefix">The optional operation result type prefix.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TanStackQueryHookAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder,
         string clientSuffix = "axios",
         string? resultSuffix = null,
         string? resultPrefix = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _clientSuffix = string.IsNullOrWhiteSpace(clientSuffix) ? "fetch" : clientSuffix;
         _hookUsesAxios = _clientSuffix.Equals("axios", StringComparison.OrdinalIgnoreCase);
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix, resultPrefix);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder, resultSuffix, resultPrefix);
         _typeBuilder = new TanStackQueryTypeBuilder(namingConverter, _hookUsesAxios);
     }
 

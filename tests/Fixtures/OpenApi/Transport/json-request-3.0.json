@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "JSON",
+    "version": "1"
+  },
+  "paths": {
+    "/items": {
+      "post": {
+        "operationId": "CreateItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    }
+  }
+}

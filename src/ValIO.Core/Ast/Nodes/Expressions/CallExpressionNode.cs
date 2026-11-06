@@ -61,6 +61,7 @@ public sealed class CallExpressionNode : ExpressionNode
     public VariableDeclarationStatementNode? VariableDeclaration { get; }
     
     
+    /// <inheritdoc/>
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -71,6 +72,9 @@ public sealed class CallExpressionNode : ExpressionNode
                 children.Add(LambdaBody);
             if (VariableDeclaration != null)
                 children.Add(VariableDeclaration);
+            if (GenericTypeArgument != null)
+                children.Add(GenericTypeArgument);
+            children.AddRange(base.Children);
             return children;
         }
     }

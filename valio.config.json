@@ -1,21 +1,19 @@
 {
   "projects": {
-    "PanoramasAdminApi": {
+    "UEApi": {
       "language": "Cpp",
-      "schema": "https://public-api.bytalent.ru/api/chessboard/panoramas/admin/swagger/v1/swagger.json",
-      "outputPath": "G:\\gta\\Wireframe\\Source\\ChessboardHttpClients",
+      "schema": "../../swagger_02_07_2026_open_api.json",
+      "outputPath": "../../Source/CubemapGeneratorMVP1/Generated",
       "generateModels": true,
       "generateClients": true,
-      "namespace": "Wireframe",
+      "namespace": "CubemapGeneratorMVP1",
       "options": {
-        "cpp": {
-          "moduleApiMacro": "CHESSBOARDHTTPCLIENTS_API",
-          "blueprintCategory": "Talent|Chessboard",
-          "copyright": "Copyright Epic Games, Inc. All Rights Reserved.",
-          "baseAsyncActionClassName": "UValIOAsyncActionBase",
-          "baseAsyncActionIncludePath": "Blueprint/ValIOTypedAsyncActionBase.h",
-          "addUnrealEngineIncludesInHeaders": false
-        }
+        "moduleApiMacro": "CUBEMAPGENERATORMVP1_API",
+        "blueprintCategory": "CubemapGenerator",
+        "copyright": "Copyright Epic Games, Inc. All Rights Reserved.",
+        "baseAsyncActionClassName": "UValIOAsyncActionBase",
+        "baseAsyncActionIncludePath": "Blueprint/ValIOTypedAsyncActionBase.h",
+        "addUnrealEngineIncludesInHeaders": false
       },
       "fileOrganization": {
         "groupingStrategy": "ByTag",

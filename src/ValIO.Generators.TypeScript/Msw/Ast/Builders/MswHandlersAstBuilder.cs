@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 using ValIO.Core.Ast.Enums;
@@ -25,14 +26,18 @@ namespace ValIO.Generators.TypeScript.Msw.Ast.Builders;
 /// to override individual handlers in tests. Path parameters in IR (e.g. <c>{petId}</c>)
 /// are rewritten to MSW colon syntax (<c>:petId</c>).
 /// </summary>
-public sealed class MswHandlersAstBuilder
+public sealed class MswHandlersAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public MswHandlersAstBuilder(INamingConverter namingConverter)
+    /// <summary>Creates a MswHandlersAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public MswHandlersAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
     }
@@ -41,9 +46,6 @@ public sealed class MswHandlersAstBuilder
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(fileOrganization);
-
-        foreach (var client in document.Clients)
-            OriginalNameMap.AddClient(_orig, client);
 
         // Collect every operation across all clients so the file is a single flat
         // handler array — matches MSW's setupWorker(...handlers) ergonomics.
@@ -200,7 +202,7 @@ public sealed class MswHandlersAstBuilder
         // up one level then into the models path. Mirrors how other builders compute
         // schema import paths relative to per-operation files.
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         return fileOrganization.SeparateModels
             ? $"../{modelsPath}/{modelFileName}/{modelFileName}"
             : $"../{modelsPath}/{modelFileName}";

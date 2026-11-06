@@ -1,66 +1,65 @@
 # ValIO npm distribution
 
-This directory contains the npm package layout for distributing the ValIO CLI
-(`valio`, built from `src/ValIO.Cli`) via the npm registry.
+The public CLI is `@val.io/valio`. It installs a self-contained executable from
+one matching optional dependency, `@val.io/cli-<platform>`, so consumers need
+Node.js 18+ and do not need a .NET runtime. Supported platforms are Windows x64,
+Linux x64/arm64 and macOS x64/arm64. The installed command is `valio`.
 
-## Layout
+GitHub Packages preview builds use `@valio-projects/valio` and
+`@valio-projects/cli-<platform>` because that registry requires the repository
+owner as its scope. The launcher reads its own `optionalDependencies` and works
+with either scope.
 
-```
-packaging/npm/
-├── README.md                       # This file (maintainer-facing)
-├── valio/                          # Main package published as `valio`
-│   ├── package.json                # Lists 5 platform packages in optionalDependencies
-│   ├── tsconfig.json
-│   ├── src/
-│   │   ├── valio.ts                # Shebang shim; resolves platform binary, spawns it
-│   │   └── install.ts              # postinstall: chmod +x on Unix, soft-warn on miss
-│   └── ...
-└── platforms/                      # One npm package per RID, published as @valio/cli-<rid>
-    ├── win32-x64/                  # → @valio/cli-win32-x64    (valio.exe)
-    ├── linux-x64/                  # → @valio/cli-linux-x64    (valio)
-    ├── linux-arm64/                # → @valio/cli-linux-arm64  (valio)
-    ├── darwin-x64/                 # → @valio/cli-darwin-x64   (valio)
-    └── darwin-arm64/               # → @valio/cli-darwin-arm64 (valio)
+## Build from a clean checkout
+
+```sh
+cd packaging/npm
+npm ci --ignore-scripts
+npm run check
+npm run build
 ```
 
-## How it works (esbuild-style pattern)
+The private `packaging/npm/package.json` and its lockfile contain only build
+tools. The published wrapper manifest lives in `valio/package.json`; native
+manifests live under `platforms/`. Keeping build dependencies separate lets CI
+build the first release while no native packages exist on the registry yet.
+Do not run `npm ci` in `valio/`.
 
-1. User runs `npm i -g valio`.
-2. npm reads `valio/package.json`, sees 5 entries in `optionalDependencies`,
-   and installs only the one whose `os`/`cpu` fields match the host. The other
-   four are silently skipped (that's what `optionalDependencies` is for).
-3. npm runs the `postinstall` script (`dist/install.js`), which `chmod +x`es
-   the binary on non-Windows hosts.
-4. When the user runs `valio`, npm dispatches to the `bin` entry
-   (`dist/valio.js`), which `createRequire`s the platform package's
-   `package.json`, resolves the binary path next to it, and `spawn`s it with
-   `stdio: 'inherit'`, forwarding the exit code.
+## Release pipeline
 
-## Build & publish flow (CI)
+`.github/workflows/release.yml` runs the full CI suite, packs NuGet artifacts,
+and cross-publishes five self-contained single-file CLI executables:
 
-The binaries are **not** built here. GitLab CI does the following for each RID:
-
-```
+```sh
 dotnet publish src/ValIO.Cli -r <rid> -c Release \
   --self-contained -p:PublishSingleFile=true
 ```
 
-Then it copies the resulting `valio` (or `valio.exe`) into
-`packaging/npm/platforms/<rid>/` and runs `npm publish` for each platform
-package, followed by `npm publish` for the main `valio` package.
+`.github/scripts/prepare-npm.mjs` stamps the channel's scope, version, exact
+optional dependency versions, repository metadata and license text. Every
+native package is published before the wrapper. A repeated release skips
+versions that already exist.
 
-## Local maintainer workflow
+Public publishing runs on a GitHub-hosted runner with Node.js 24, npm 11 and
+`id-token: write`. Configure an npm trusted publisher for each of the six
+packages: GitHub owner `valio-projects`, repository `valio.open-api`, workflow
+`release.yml`, environment `production`. For the first release, before the
+packages exist, provide a granular `NPM_TOKEN` with permission to publish new
+packages in `@val.io`. The token remains an optional bootstrap fallback;
+subsequent releases can use OIDC. GitHub Packages previews use `GITHUB_TOKEN`.
+See [npm's trusted publisher documentation](https://docs.npmjs.com/trusted-publishers/).
+
+## Verify packaging locally
+
+From the repository root, after building the wrapper and a self-contained
+single-file executable for the current host:
 
 ```sh
-cd packaging/npm/valio
-npm install
-npm run build           # tsc → dist/
+node --test .github/scripts/release-scripts.test.mjs
+node .github/scripts/smoke-npm.mjs /absolute/path/to/valio
 ```
 
-The `valio` package will not actually run until the platform packages exist on
-the registry (or are linked locally) and contain real binaries.
-
-## Versioning
-
-The main `valio` package and all `@valio/cli-*` platform packages must share
-the same semver. CI bumps them together.
+The smoke check packs the real wrapper and native package into temporary
+tarballs, installs them offline into a clean consumer, runs postinstall, and
+invokes the packaged `valio --help`. It fails if the binary, launcher output,
+native package name, or bundled .NET runtime is missing.

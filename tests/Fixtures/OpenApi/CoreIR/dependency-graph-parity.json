@@ -1,0 +1,83 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Graph",
+    "version": "1"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "getItems",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "$ref": "#/components/schemas/Child"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Mode": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b"
+        ]
+      },
+      "Base": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          }
+        }
+      },
+      "Child": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "details": {
+                "type": "object",
+                "properties": {
+                  "modes": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Mode"
+                    }
+                  }
+                }
+              },
+              "next": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Child"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

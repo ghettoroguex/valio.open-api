@@ -434,4 +434,4 @@ Aliases accepted: `jsonvalue`, `serde-json-value` → `json-value`.
 - **Plugin-specific shape inside `options`.** Some configs put options
   directly on `options` (`options.transports`), others nest under a
   per-language key (`options.typescript.httpTransports`). Both styles
-  are supported; see [Projects: options](./projects/#options).
+  are supported; see [Projects: options](/configuration/projects/#options).

@@ -1,0 +1,35 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Dog": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AnimalBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "bark": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "AnimalBase": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

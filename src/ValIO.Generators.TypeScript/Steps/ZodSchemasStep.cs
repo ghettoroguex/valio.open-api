@@ -1,6 +1,4 @@
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Interfaces;
-using ValIO.Core.IR.Types;
 using ValIO.Core.Plugins;
 using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Options;
@@ -9,8 +7,7 @@ using ValIO.Generators.TypeScript.Zod;
 namespace ValIO.Generators.TypeScript.Steps;
 
 /// <summary>
-/// Step: генерирует Zod-схемы для всех IR моделей и enum-ов.
-/// Активируется при ValidationLibrary = "zod3" или "zod4".
+/// Generates Zod schemas for the shared document's models and enums.
 /// </summary>
 public sealed class ZodSchemasStep : ICodeGenerationStep
 {
@@ -30,42 +27,30 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         return opts?.ValidationLibrary is "zod3" or "zod4";
     }
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
         var schemasPath = fileOrg.SchemasPath ?? "schemas";
+        var documentContext = context.DocumentContext;
 
         var zodVersion = opts?.ValidationLibrary ?? "zod3";
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        TypeNode TypeBuilder(ValIO.Core.IR.Types.IrType t) => astBuilder.BuildType(t);
+        var astBuilder = new TypeScriptAstBuilder(documentContext, _namingConverter, opts);
 
-        var renderer = new ZodSchemaRenderer(_namingConverter, TypeBuilder, zodVersion: zodVersion,
+        var renderer = new ZodSchemaRenderer(documentContext, _namingConverter, astBuilder.BuildType, zodVersion: zodVersion,
             modelsPath: modelsPath, uuidFormat: opts?.UuidFormat);
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
-
-        // Резолв наследования allOf: собственный object z-схемы не переобъявляет свойства базы.
-        renderer.ModelsByName = byName;
-        var processed = new HashSet<string>();
-
-        foreach (var name in orderedNames)
+        foreach (var model in documentContext.ModelsInDependencyOrder)
         {
-            if (!byName.TryGetValue(name, out var model)) continue;
+            ct.ThrowIfCancellationRequested();
             AddModelSchema(context, renderer, model, modelsPath, schemasPath, fileOrg.SeparateModels);
-            processed.Add(name);
         }
 
-        foreach (var model in context.IrDocument.Models)
+        foreach (var irEnum in documentContext.Document.Enums)
         {
-            if (!processed.Contains(model.Name))
-                AddModelSchema(context, renderer, model, modelsPath, schemasPath, fileOrg.SeparateModels);
-        }
-
-        foreach (var irEnum in context.IrDocument.Enums)
-        {
+            ct.ThrowIfCancellationRequested();
             AddEnumSchema(context, renderer, irEnum, modelsPath, schemasPath, fileOrg.SeparateModels);
         }
 

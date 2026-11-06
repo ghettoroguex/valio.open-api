@@ -71,7 +71,7 @@ public sealed class ClientExecutionContractTests
             var options = new TypeScriptGenerationOptions { Transports = ["axios"], Axios = new TypeScriptAxiosOptions
                 { CustomInstancePath = "./defaults", CustomInstanceName = "apiMutator" } };
             var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
-            var builder = new TypeScriptAstBuilder(new NamingConverter(), options);
+            var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), options);
             var mixed = Operation([new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } }, new IrResponse { StatusCode = "204", Type = null }]);
             var empty = Operation([new IrResponse { StatusCode = "204", Type = null }]);
             await File.WriteAllTextAsync(Path.Combine(temporary, "axios.ts"), renderer.Render(builder.BuildSourceFileForOperation(mixed, transport: "axios")));
@@ -125,7 +125,7 @@ public sealed class ClientExecutionContractTests
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport] });
         var suffix = transport.StartsWith("angular-", StringComparison.Ordinal) ? ".service.ts" : $".{transport}.ts";
         var client = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(suffix, StringComparison.Ordinal));
-        client.Content.Should().Contain("\"Paging.Page\"");
+        client.Content.Should().MatchRegex(@"[""']Paging\.Page[""']");
         client.Content.Should().MatchRegex(@"\?*\.Paging_Page\b");
     }
 
@@ -141,7 +141,7 @@ public sealed class ClientExecutionContractTests
             var parameter = new IrParameter { Name = "Paging_Page", OriginalName = "Paging.Page", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }, IsRequired = false };
             var other = new IrParameter { Name = "Status", OriginalName = "Status", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String }, IsRequired = false };
             var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with { QueryParameters = [parameter, other] };
-            var builder = new TypeScriptAstBuilder(new NamingConverter());
+            var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter());
             var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
             await File.WriteAllTextAsync(Path.Combine(temporary, "axios.ts"), renderer.Render(builder.BuildSourceFileForOperation(operation, transport: "axios")));
             await File.WriteAllTextAsync(Path.Combine(temporary, "fetch.ts"), renderer.Render(builder.BuildSourceFileForOperation(operation, transport: "fetch")));

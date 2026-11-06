@@ -19,8 +19,19 @@ namespace ValIO.Generators.TypeScript.Angular.Ast.Renderers;
 /// </summary>
 public sealed class AngularSourceFileRenderer
 {
-    private readonly TypeScriptAstRenderer _innerRenderer = new();
-    private readonly AngularServiceRenderer _classRenderer = new();
+    /// <summary>The renderer for ordinary TypeScript declarations.</summary>
+    private readonly TypeScriptAstRenderer _innerRenderer;
+    /// <summary>The service renderer using the same validation-node support.</summary>
+    private readonly AngularServiceRenderer _classRenderer;
+
+    /// <summary>Creates an Angular source renderer with optional validation AST support.</summary>
+    /// <param name="nodeRenderers">The configured expression renderer chain.</param>
+    public AngularSourceFileRenderer(IEnumerable<ITypeScriptNodeRenderer>? nodeRenderers = null)
+    {
+        var renderers = nodeRenderers?.ToArray() ?? [];
+        _innerRenderer = new TypeScriptAstRenderer(renderers);
+        _classRenderer = new AngularServiceRenderer(renderers);
+    }
 
     public string Render(SourceFileNode node)
     {

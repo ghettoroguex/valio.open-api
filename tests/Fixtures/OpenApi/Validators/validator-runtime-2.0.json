@@ -1,0 +1,164 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Validator semantics",
+    "version": "1"
+  },
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/choices": {
+      "post": {
+        "operationId": "SubmitChoice",
+        "responses": {
+          "200": {
+            "description": "Choice",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/A"
+                },
+                {
+                  "$ref": "#/definitions/B"
+                }
+              ]
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/A"
+                },
+                {
+                  "$ref": "#/definitions/B"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "A": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "B": {
+      "type": "object",
+      "required": [
+        "b"
+      ],
+      "properties": {
+        "b": {
+          "type": "number"
+        }
+      }
+    },
+    "C": {
+      "type": "object",
+      "required": [
+        "c"
+      ],
+      "properties": {
+        "c": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Presence": {
+      "type": "object",
+      "required": [
+        "nullable"
+      ],
+      "properties": {
+        "nullable": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "optional": {
+          "type": "string"
+        }
+      }
+    },
+    "AllOf": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/A"
+        },
+        {
+          "$ref": "#/definitions/B"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "tag"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "BinaryValues": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "format": "binary"
+        },
+        "bytes": {
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "required": [
+        "file",
+        "bytes"
+      ]
+    },
+    "StandardFormats": {
+      "required": [
+        "id",
+        "date",
+        "timestamp"
+      ],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timeValue": {
+          "type": "string",
+          "format": "time"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

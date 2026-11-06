@@ -60,6 +60,8 @@ public class OkHttpClientStepTests
         clientFile.Content.Should().Contain("getUserById(");
     }
 
+    /// <summary>Encodes parameters within individual URL segments instead of treating their slashes as separators.</summary>
+    /// <returns>The generated URL construction assertions.</returns>
     [Test]
     public async Task PathParametersAreInterpolatedViaStringConcat()
     {
@@ -68,8 +70,9 @@ public class OkHttpClientStepTests
 
         var clientFile = ctx.GeneratedFiles.First(f =>
             f.RelativePath.Replace('\\', '/').StartsWith("api/", StringComparison.Ordinal));
-        // {id} becomes String.valueOf(id) inside an addPathSegments("...") expression.
-        clientFile.Content.Should().Contain("users/");
+        // Each declared route segment is encoded separately by the native HTTP library.
+        clientFile.Content.Should().Contain("addPathSegment(\"users\")");
+        clientFile.Content.Should().Contain("addPathSegment((\"\" + String.valueOf(id)))");
         clientFile.Content.Should().Contain("String.valueOf(id)");
     }
 

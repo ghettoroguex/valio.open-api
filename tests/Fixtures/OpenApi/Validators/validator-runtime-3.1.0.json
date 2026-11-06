@@ -1,0 +1,364 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Validator semantics",
+    "version": "1"
+  },
+  "paths": {
+    "/choices": {
+      "post": {
+        "operationId": "SubmitChoice",
+        "responses": {
+          "200": {
+            "description": "Choice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/A"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/B"
+                        },
+                        {
+                          "$ref": "#/components/schemas/C"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/A"
+                      },
+                      {
+                        "$ref": "#/components/schemas/B"
+                      }
+                    ]
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/A"
+                      },
+                      {
+                        "$ref": "#/components/schemas/C"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "A": {
+        "type": "object",
+        "required": [
+          "a"
+        ],
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        }
+      },
+      "B": {
+        "type": "object",
+        "required": [
+          "b"
+        ],
+        "properties": {
+          "b": {
+            "type": "number"
+          }
+        }
+      },
+      "C": {
+        "type": "object",
+        "required": [
+          "c"
+        ],
+        "properties": {
+          "c": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Presence": {
+        "type": "object",
+        "required": [
+          "nullable"
+        ],
+        "properties": {
+          "nullable": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "optional": {
+            "type": "string"
+          }
+        }
+      },
+      "AllOf": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/A"
+          },
+          {
+            "$ref": "#/components/schemas/B"
+          }
+        ],
+        "type": "object",
+        "required": [
+          "tag"
+        ],
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        }
+      },
+      "OneOf": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/A"
+          },
+          {
+            "$ref": "#/components/schemas/B"
+          }
+        ],
+        "type": "object",
+        "required": [
+          "tag"
+        ],
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        }
+      },
+      "AnyOf": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/A"
+          },
+          {
+            "$ref": "#/components/schemas/B"
+          }
+        ],
+        "type": "object",
+        "required": [
+          "tag"
+        ],
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        }
+      },
+      "PatternChoice": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^a"
+              },
+              {
+                "type": "string",
+                "pattern": "z$"
+              }
+            ]
+          }
+        }
+      },
+      "RangeChoice": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "number",
+                "minimum": 5,
+                "maximum": 15
+              }
+            ]
+          }
+        }
+      },
+      "DuplicateChoice": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "NestedAnyAll": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/A"
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/B"
+                  },
+                  {
+                    "$ref": "#/components/schemas/C"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "NestedAllOne": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/A"
+                  },
+                  {
+                    "$ref": "#/components/schemas/B"
+                  }
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/A"
+                  },
+                  {
+                    "$ref": "#/components/schemas/C"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "NullChoice": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^a"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "BinaryValues": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary"
+          },
+          "bytes": {
+            "type": "string",
+            "format": "byte"
+          }
+        },
+        "required": [
+          "file",
+          "bytes"
+        ]
+      },
+      "StandardFormats": {
+        "required": [
+          "id",
+          "date",
+          "timestamp"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeValue": {
+            "type": "string",
+            "format": "time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "type": "object"
+      }
+    }
+  }
+}

@@ -23,13 +23,19 @@ public abstract class CSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     
     // Абстрактные методы только для C# узлов
     public abstract TResult VisitCompilationUnit(CompilationUnitNode node);
-    public abstract TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node);
     public abstract TResult VisitUsingDirective(UsingDirectiveNode node);
-    public abstract TResult VisitClassDeclaration(ClassDeclarationNode node);
     public abstract TResult VisitRecordDeclaration(RecordDeclarationNode node);
-    public abstract TResult VisitStructDeclaration(StructDeclarationNode node);
-    public abstract TResult VisitFieldDeclaration(FieldDeclarationNode node);
     public abstract TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
+
+    /// <inheritdoc/>
+    public abstract TResult VisitDefaultExpression(DefaultExpressionNode node);
+
+    /// <inheritdoc />
+    public abstract TResult VisitTypeOfExpression(TypeOfExpressionNode node);
+
+    // Namespace/Class/Struct/Field — универсальные узлы Core; Visit-методы
+    // наследуются из IAstVisitor (virtual-default в BaseAstVisitor),
+    // рендерер переопределяет их напрямую.
     
     // Enum и Interface (общие для C# и TypeScript, определены в IAstVisitor)
     // Реализуем их здесь, так как они используются в C#

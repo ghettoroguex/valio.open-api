@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,21 +17,27 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Строитель AST для Result типов (discriminated union по status codes).
 /// По аналогии с UE C++: каждый status code → свой variant { status: N; body: T }.
 /// </summary>
-public sealed class TypeScriptResultsAstBuilder
+public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly string _resultSuffix;
     private readonly string _resultPrefix;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public TypeScriptResultsAstBuilder(
+    /// <summary>Creates a TypeScriptResultsAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="resultSuffix">The optional operation result type suffix.</param>
+    /// <param name="resultPrefix">The optional operation result type prefix.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TypeScriptResultsAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         string? resultSuffix = null,
         string? resultPrefix = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
@@ -86,19 +93,21 @@ public sealed class TypeScriptResultsAstBuilder
         return $"{namingConverter.ToPascalCase(operationName)}Result{suffix}";
     }
 
-    /// <summary>Builds the discriminated result union, including documented bodyless success variants.</summary>
-    /// <param name="operation">The operation whose responses are represented.</param>
-    /// <param name="importPath">An optional import root.</param>
-    /// <param name="fileOrganization">The configured output paths.</param>
-    /// <param name="currentOperationName">The operation name used for declarations.</param>
-    /// <returns>The source file containing result interfaces and their union.</returns>
+    /// <summary>
+    /// Builds a result union including documented bodyless statuses when any response has a body.
+    /// </summary>
+    /// <param name="operation">The operation whose responses define the union.</param>
+    /// <param name="importPath">The optional import path override.</param>
+    /// <param name="fileOrganization">The generated model layout settings.</param>
+    /// <param name="currentOperationName">The operation name used for generated result declarations.</param>
+    /// <returns>The result variants and union source file.</returns>
     public SourceFileNode BuildResultsSourceFile(
         IrOperation operation,
         string? importPath,
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
@@ -118,10 +127,10 @@ public sealed class TypeScriptResultsAstBuilder
         {
             var variantTypes = new List<TypeNode>();
 
-            foreach (var response in operation.Responses.Where(r => r.Type != null || IsSuccessStatusCode(r.StatusCode)))
+            foreach (var response in operation.Responses)
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
-                var bodyType = response.Type is null
+                var bodyType = response.Type == null
                     ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
                     : _typeBuilder(response.Type);
                 var isSuccess = IsSuccessStatusCode(response.StatusCode);
@@ -215,7 +224,7 @@ public sealed class TypeScriptResultsAstBuilder
             var modelsPath = fileOrganization?.ModelsPath ?? "models";
             foreach (var modelName in modelRefs.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+                var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
                 var relativePath = $"../../{modelsPath}/{modelFileName}/{modelFileName}";
                 imports.Add(new ImportNode(
                     items: new[] { new IdentifierNode(modelName) }.ToImmutableList(),

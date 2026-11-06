@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -17,21 +18,29 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Angular.Builders;
 /// Builds AST for <c>@tanstack/angular-query-experimental</c> hook files
 /// (<c>injectQuery</c> / <c>injectMutation</c>).
 /// </summary>
-public sealed class TanStackAngularHookAstBuilder
+public sealed class TanStackAngularHookAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
 
-    public TanStackAngularHookAstBuilder(
+    /// <summary>Creates a TanStackAngularHookAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="resultSuffix">The optional operation result type suffix.</param>
+    /// <param name="resultPrefix">The optional operation result type prefix.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TanStackAngularHookAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, TypeNode> typeBuilder,
         string? resultSuffix = null,
         string? resultPrefix = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix, resultPrefix);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder, resultSuffix, resultPrefix);
     }
 
     public SourceFileNode BuildHookSourceFile(

@@ -1,0 +1,43 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/x": {
+      "get": {
+        "operationId": "getX",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Result"
+                    }
+                  ],
+                  "description": "wrapped"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Result": {
+        "type": "object",
+        "properties": {
+          "v": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

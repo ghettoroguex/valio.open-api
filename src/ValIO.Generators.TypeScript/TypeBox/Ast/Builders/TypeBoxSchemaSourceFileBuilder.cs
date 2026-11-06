@@ -1,10 +1,12 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Options;
@@ -14,29 +16,38 @@ namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 /// <summary>
 /// Builds TypeBox schema source files as TypeScript AST.
 /// </summary>
-public sealed class TypeBoxSchemaSourceFileBuilder
+public sealed class TypeBoxSchemaSourceFileBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly TypeBoxAstBuilder _builder;
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
-
-    public TypeBoxSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
+    /// <summary>Creates a schema source builder bound to one finalized document context.</summary>
+    /// <param name="documentContext">The shared immutable declaration indexes.</param>
+    /// <param name="namingConverter">The naming rules for declaration file stems.</param>
+    /// <param name="modelsPath">The configured model output directory.</param>
+    /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
+    public TypeBoxSchemaSourceFileBuilder(IrDocumentContext documentContext, INamingConverter namingConverter,
+        string modelsPath = "models", string? uuidFormat = null)
+        : base(documentContext)
     {
-        _namingConverter = namingConverter;
+        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
         _builder = new TypeBoxAstBuilder(uuidFormat);
     }
 
+    /// <summary>Builds a model schema with dependencies resolved from the complete input document.</summary>
+    /// <param name="model">The model being validated.</param>
+    /// <param name="currentFileName">The current schema file stem.</param>
+    /// <param name="schemasPath">The schema output directory.</param>
+    /// <returns>The complete schema source AST.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
     public SourceFileNode BuildModelSchemaSourceFile(IrModel model, string? currentFileName = null, string? schemasPath = null)
     {
         ArgumentNullException.ThrowIfNull(model);
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
 
         var schemaName = GetSchemaName(model.Name);
         return new SourceFileNode(
@@ -52,11 +63,14 @@ public sealed class TypeBoxSchemaSourceFileBuilder
             fileDocumentation: SchemaFileHeader(model.OriginalName, model.Name));
     }
 
+    /// <summary>Builds a schema referencing the enum's existing values export.</summary>
+    /// <param name="irEnum">The enum being validated.</param>
+    /// <param name="separateModels">Whether enum files occupy individual directories.</param>
+    /// <returns>The complete enum schema source AST.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="irEnum"/> is null.</exception>
     public SourceFileNode BuildEnumSchemaSourceFile(IrEnum irEnum, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(irEnum);
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, irEnum);
 
         var schemaName = GetSchemaName(irEnum.Name);
 
@@ -104,16 +118,27 @@ public sealed class TypeBoxSchemaSourceFileBuilder
 
     private static string GetSchemaName(string name) => $"{name}Schema";
 
+    /// <summary>Builds runtime imports and dependencies for the model's complete schema.</summary>
+    /// <param name="model">The model being rendered.</param>
+    /// <param name="currentFileName">The current schema file stem.</param>
+    /// <param name="schemasPath">The schema output directory.</param>
+    /// <returns>The imports needed by the generated model schema.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IrModel model, string? currentFileName, string? schemasPath)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildTypeBoxImports());
+        if (model.Properties.Any(property => TypeBoxInstanceAst.RequiresRegistry(property.Type))
+            || model.Composition?.Types.Any(TypeBoxInstanceAst.RequiresRegistry) == true)
+            imports.Add(new ImportNode([new IdentifierNode("Kind"), new IdentifierNode("TypeRegistry")],
+                "@sinclair/typebox", ImportKind.Named));
+        if (model.Properties.Any(property => _builder.RequiresFormatRegistry(property.Type))
+            || model.Composition?.Types.Any(_builder.RequiresFormatRegistry) == true)
+            imports.Add(new ImportNode([new IdentifierNode("FormatRegistry")], "@sinclair/typebox", ImportKind.Named));
         var dependencies = ExtractDependencies(model);
 
         foreach (var dependency in dependencies.OrderBy(name => name, StringComparer.Ordinal))
         {
-            // Имя файла зависимости — от исходного (до affix) имени; спецификатор импорта affix.
-            var depFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(dependency, dependency));
+            var depFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, dependency));
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(GetSchemaName(dependency))),
                 from: CalculateImportPath(currentFileName, depFileName, schemasPath),

@@ -1,0 +1,144 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Native HTTP client contracts",
+    "version": "1"
+  },
+  "paths": {
+    "/entries/{entry-id}": {
+      "get": {
+        "operationId": "getEntry",
+        "tags": [
+          "Entries"
+        ],
+        "parameters": [
+          {
+            "name": "entry-id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "query.value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh required"
+          },
+          "404": {
+            "description": "Missing"
+          }
+        }
+      }
+    },
+    "/entries": {
+      "get": {
+        "operationId": "listEntries",
+        "tags": [
+          "Entries"
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Entry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ping": {
+      "post": {
+        "operationId": "ping",
+        "tags": [
+          "Entries"
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/slow": {
+      "get": {
+        "operationId": "slow",
+        "tags": [
+          "Entries"
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Entry": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "score",
+          "active",
+          "tags"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

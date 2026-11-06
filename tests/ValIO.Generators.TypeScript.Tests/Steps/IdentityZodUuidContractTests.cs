@@ -15,13 +15,30 @@ public sealed class IdentityZodUuidContractTests
     /// <summary>Builds a generated pipeline for a single isolated test.</summary>
     /// <param name="fixture">The embedded OpenAPI document name.</param>
     /// <param name="validation">The Zod version to use.</param>
+    /// <param name="transport">The native HTTP transport to generate.</param>
     /// <returns>The generated files.</returns>
-    private static async Task<GenerationContext> Generate(string fixture, string validation)
+    private static async Task<GenerationContext> Generate(string fixture, string validation, string transport = "axios")
     {
         using var harness = new PipelineTestHarness();
         var document = await PipelineTestHarness.LoadDocumentAsync(fixture);
         return await harness.RunAsync(document, new TypeScriptGenerationOptions
-        { Transports = ["axios"], ValidationLibrary = validation, UuidFormat = "regex" });
+        { Transports = [transport], ValidationLibrary = validation, UuidFormat = "regex" });
+    }
+
+    /// <summary>Compiles inline UUID request validation with every native transport and validator.</summary>
+    /// <param name="transport">The native HTTP transport, including the promise-based Angular client.</param>
+    /// <param name="validation">The validation library whose UUID constant must be imported.</param>
+    /// <returns>A task that completes after every generated source passes strict semantic compilation.</returns>
+    [Test]
+    public async Task InlineUuidBodyCompilesAcrossNativeTransports(
+        [Values("axios", "fetch", "solid", "nextjs", "got", "ky", "ofetch", "undici", "angular-promise", "angular-rxjs")] string transport,
+        [Values("zod3", "zod4", "valibot", "typebox")] string validation)
+    {
+        var context = await Generate("uuid-only-body.json", validation, transport);
+        context.GeneratedFiles.Should().Contain(file => file.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
+        await GeneratedTypeScriptCompiler.Compile(context.GeneratedFiles
+            .Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray(),
+            $"inline UUID body: {transport}/{validation}");
     }
 
     /// <summary>Checks platform line endings in generated Zod schemas and multiline TypeScript clients.</summary>
@@ -64,8 +81,8 @@ public sealed class IdentityZodUuidContractTests
         schema.Should().NotContain("requiredValue: z.string().nullish()");
         schema.Should().Contain("requiredNullable: z.string().nullable()");
         schema.Should().Contain("optionalValue: z.string().optional()");
-        schema.Should().Contain("optionalNullable: z.string().nullish()");
-        schema.Should().Contain("optionalNullableArray: z.array(z.number().int()).nullish()");
+        schema.Should().Contain("optionalNullable: z.string().nullable().optional()");
+        schema.Should().Contain("optionalNullableArray: z.array(z.number().int()).nullable().optional()");
         schema.Should().Contain("requiredNullableDictionary: z.record(z.string(), z.string()).nullable()");
         schema.Should().Contain("nullableValues: z.record(z.string(), z.string().nullable()).optional()");
         schema.Should().Contain("errors: z.record(z.string(), z.array(z.string())).optional()");

@@ -1,0 +1,43 @@
+{
+  "openapi": "3.1.2",
+  "info": { "title": "Disjoint nullable references", "version": "1.0" },
+  "paths": {
+    "/nullable": {
+      "post": {
+        "operationId": "ExchangeNullableReference",
+        "tags": ["Nullable"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/NullableCountry" }, { "type": "null" }] } } }
+        },
+        "responses": {
+          "200": {
+            "description": "A nullable country",
+            "content": { "application/json": { "schema": { "oneOf": [{ "type": "null" }, { "$ref": "#/components/schemas/NullableCountry" }] } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NullableCountry": {
+        "type": "object", "required": ["id", "name"],
+        "properties": { "id": { "type": "integer", "format": "int32" }, "name": { "type": "string" } }
+      },
+      "NullableState": { "type": "string", "enum": ["pending", "granted"] },
+      "NullableReferences": {
+        "type": "object",
+        "required": ["country", "state", "countries", "states"],
+        "properties": {
+          "country": { "oneOf": [{ "type": "null" }, { "$ref": "#/components/schemas/NullableCountry" }] },
+          "state": { "oneOf": [{ "$ref": "#/components/schemas/NullableState" }, { "type": "null" }] },
+          "optionalCountry": { "anyOf": [{ "$ref": "#/components/schemas/NullableCountry" }, { "type": "null" }] },
+          "optionalState": { "oneOf": [{ "type": "null" }, { "$ref": "#/components/schemas/NullableState" }] },
+          "countries": { "type": "array", "items": { "oneOf": [{ "$ref": "#/components/schemas/NullableCountry" }, { "type": "null" }] } },
+          "states": { "type": "object", "additionalProperties": { "oneOf": [{ "type": "null" }, { "$ref": "#/components/schemas/NullableState" }] } }
+        }
+      }
+    }
+  }
+}

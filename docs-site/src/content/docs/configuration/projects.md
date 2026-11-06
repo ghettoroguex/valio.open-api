@@ -81,9 +81,9 @@ exits with `1` if any project failed.
 | `generateModels`   | bool    | `true`          | Emit DTOs/enums.                                                                  |
 | `generateClients`  | bool    | `true`          | Emit HTTP clients.                                                                |
 | `namespace`        | string? | `null`          | Namespace/package; used by C#, Java, Kotlin, PHP, F#, sometimes Swift.            |
-| `options`          | object  | `{}`            | Per-plugin options. See [Options reference](./options-reference/).                |
-| `fileOrganization` | object  | plugin defaults | Folder layout. See [File organization](./file-organization/).                     |
-| `namingConvention` | object  | plugin defaults | Identifier casing. See [Naming conventions](./naming-conventions/).               |
+| `options`          | object  | `{}`            | Per-plugin options. See [Options reference](/configuration/options-reference/).                |
+| `fileOrganization` | object  | plugin defaults | Folder layout. See [File organization](/configuration/file-organization/).                     |
+| `namingConvention` | object  | plugin defaults | Identifier casing. See [Naming conventions](/configuration/naming-conventions/).               |
 
 ## `language` deep dive
 
@@ -169,13 +169,13 @@ Several languages use it; the rest ignore it.
 
 For some plugins the namespace is also exposed as an `options.<plugin>.namespace`
 entry, which takes precedence when both are set. See the
-[Options reference](./options-reference/) for plugin-specific behavior.
+[Options reference](/configuration/options-reference/) for plugin-specific behavior.
 
 ## `options`
 
 `options` is a free-form object of per-plugin settings. The object
 shape varies by language; see the
-[Options reference](./options-reference/) for every key, default, and
+[Options reference](/configuration/options-reference/) for every key, default, and
 valid value per plugin. The pages under
 `/languages/<lang>/` describe what each option does to the generated code.
 
@@ -221,7 +221,7 @@ with a warning so configs forward-compatible across plugin versions.
 
 ## `fileOrganization`
 
-Quick summary of the fields — see [File organization](./file-organization/) for the full rules:
+Quick summary of the fields — see [File organization](/configuration/file-organization/) for the full rules:
 
 ```json
 {
@@ -245,7 +245,7 @@ Quick summary of the fields — see [File organization](./file-organization/) fo
 
 ## `namingConvention`
 
-Quick summary — see [Naming conventions](./naming-conventions/) for
+Quick summary — see [Naming conventions](/configuration/naming-conventions/) for
 the full rules:
 
 ```json
@@ -299,7 +299,7 @@ projects:
 ValIO ignores the `_shared` key at run time because it lacks the
 required `language`/`schema`/`outputPath` fields — but a cleaner
 pattern is to keep the anchor outside `projects` and reference it
-under each real project. See [YAML configuration](./yaml/).
+under each real project. See [YAML configuration](/configuration/yaml/).
 
 **2. Generate the JSON config from a script.** A tiny Node or shell
 script can stamp out repeated blocks and write the resulting JSON,
@@ -307,10 +307,10 @@ then `valio generate -c valio.config.json` picks it up.
 
 ## See also
 
-- [Configuration file](./) — top-level overview.
-- [Options reference](./options-reference/) — every plugin option.
-- [File organization](./file-organization/).
-- [Naming conventions](./naming-conventions/).
-- [YAML configuration](./yaml/) — anchors and aliases.
+- [Configuration file](/configuration/) — top-level overview.
+- [Options reference](/configuration/options-reference/) — every plugin option.
+- [File organization](/configuration/file-organization/).
+- [Naming conventions](/configuration/naming-conventions/).
+- [YAML configuration](/configuration/yaml/) — anchors and aliases.
 - [Plugin IDs](/reference/plugin-ids/).
-- [Examples](./examples/web-and-server/).
+- [Examples](/configuration/examples/web-and-server/).

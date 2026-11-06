@@ -27,7 +27,9 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// const url = path + (query.size &gt; 0 ? `?${query}` : "");
 /// </code>
 /// <c>URLSearchParams</c> performs the percent-encoding, so no manual <c>encodeURIComponent</c> is emitted. Array
-/// values are comma-joined by <c>String(...)</c> — adequate for v1.
+/// values are comma-joined by <c>String(...)</c> — adequate for v1. Each URLSearchParams key uses
+/// <see cref="IrParameter.OriginalName"/>, while its value access uses the sanitized
+/// <see cref="IrParameter.Name"/>.
 /// </remarks>
 /// <seealso cref="TypeScriptRequestPath"/>
 public static class TypeScriptQueryString
@@ -75,11 +77,13 @@ public static class TypeScriptQueryString
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
+            // The key is the wire name (Paging.Offset), not the sanitized TS property (Paging_Offset):
+            // ASP.NET binds a nested model by its dotted name and finds nothing under the underscore.
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
                 ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
-            if (parameter.IsRequired)
+            if (!queryMayBeUndefined && !TypeScriptParameterModel.IsOptional(parameter))
                 statements.Add(setCall);
             else
                 statements.Add(new IfStatementNode(
@@ -93,25 +97,6 @@ public static class TypeScriptQueryString
             new TemplateLiteralExpressionNode(ImmutableList.Create(new TemplateLiteralPart("?"), new TemplateLiteralPart(Id("query")))),
             Str(string.Empty));
         return new BinaryExpressionNode(urlExpr, BinaryOperator.Add, queryTail);
-    }
-
-    /// <summary>Builds a safe object property key for a query parameter's wire name.</summary>
-    /// <param name="parameter">The parameter with its source and generated names.</param>
-    /// <returns>A TypeScript identifier or a quoted string key.</returns>
-    public static string WirePropertyName(IrParameter parameter) =>
-        parameter.OriginalName == parameter.Name ? parameter.Name : System.Text.Json.JsonSerializer.Serialize(parameter.OriginalName);
-
-    /// <summary>Builds an Axios parameter object keyed by original wire names when names were sanitized.</summary>
-    /// <param name="operation">The source operation.</param>
-    /// <param name="source">The generated query object.</param>
-    /// <returns>The original object when no names differ; otherwise a wire-keyed object.</returns>
-    public static ExpressionNode BuildWireQueryObject(IrOperation operation, ExpressionNode source)
-    {
-        if (operation.QueryParameters.All(parameter => parameter.OriginalName == parameter.Name)) return source;
-        var properties = operation.QueryParameters.Select(parameter => new PropertyAssignmentNode(
-            new IdentifierNode(WirePropertyName(parameter)),
-            TypeScriptRequestPath.BuildParameterAccess(source, parameter.Name, mayBeUndefined: true))).ToImmutableList();
-        return new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true);
     }
 
     /// <summary>Builds an identifier expression.</summary>

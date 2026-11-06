@@ -5,11 +5,11 @@ Generate type-safe HTTP clients for 12 languages from any OpenAPI spec.
 ## Install
 
 ```sh
-npm install -g @valio-projects/valio
+npm install -g @val.io/valio
 ```
 
 This pulls in a small prebuilt native binary for your platform (one of
-`@valio/cli-{win32-x64,linux-x64,linux-arm64,darwin-x64,darwin-arm64}`) via
+`@val.io/cli-{win32-x64,linux-x64,linux-arm64,darwin-x64,darwin-arm64}`) via
 npm's optional dependencies — you don't need .NET installed.
 
 ## Usage

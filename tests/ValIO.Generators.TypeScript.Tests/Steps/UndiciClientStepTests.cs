@@ -30,6 +30,8 @@ public class UndiciClientStepTests
             f.RelativePath.EndsWith(".undici.ts", StringComparison.Ordinal));
     }
 
+    /// <summary>Verifies UndiciClient_EmitsRequestImportAndCall with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task UndiciClient_EmitsRequestImportAndCall()
     {
@@ -39,7 +41,7 @@ public class UndiciClientStepTests
         var undici = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.undici.ts", StringComparison.Ordinal));
         undici.Content.Should().Contain("import { request } from \"undici\"");
-        undici.Content.Should().Contain("await request(");
+        undici.Content.Should().Contain("await httpClient(");
         undici.Content.Should().Contain("response.statusCode");
     }
 

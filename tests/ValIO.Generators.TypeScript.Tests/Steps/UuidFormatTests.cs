@@ -30,6 +30,7 @@ public class UuidFormatTests
     private static bool HasFormatsFile(GenerationContext ctx) =>
         ctx.GeneratedFiles.Any(f => f.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
 
+    /// <summary>Verifies the default UUID policy uses the shared canonical text predicate without exporting a regex constant.</summary>
     [Test]
     public async Task DefaultGuid_Zod_EmitsUuidValidator_NoFormatsFile()
     {
@@ -41,7 +42,7 @@ public class UuidFormatTests
             // UuidFormat left default ("guid").
         });
 
-        ModelSchema(ctx).Should().Contain("z.string().uuid()");
+        ModelSchema(ctx).Should().Contain("z.string().refine(").And.Contain("[0-9a-fA-F]{8}");
         HasFormatsFile(ctx).Should().BeFalse("guid mode needs no shared regex constant");
     }
 

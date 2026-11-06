@@ -16,7 +16,7 @@ using ValIO.Generators.TypeScript.Validation;
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
 /// <summary>
-/// HTTP endpoint: общая подготовка params/Zod и реализация fetch-тела.
+/// Builds HTTP endpoint parameter validation and the plain fetch transport implementation.
 /// </summary>
 public partial class TypeScriptAstBuilder
 {
@@ -37,6 +37,9 @@ public partial class TypeScriptAstBuilder
         public bool QueryMayBeUndefined { get; set; }
     }
 
+    /// <summary>Prepares validated parameter groups and native multipart request data.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The parameter sources and statements needed by the endpoint.</returns>
     private HttpParamSourcesContext PrepareHttpParamSourcesWithOptionalZod(IrOperation operation)
     {
         var ctx = new HttpParamSourcesContext();
@@ -78,7 +81,11 @@ public partial class TypeScriptAstBuilder
             }
             if (hasQuery)
             {
-                var parseCall = _validation.ValidateNamed($"{opName}QueryParamsSchema", model.QueryObject()!);
+                var queryInput = model.QueryMayBeUndefined
+                    ? new BinaryExpressionNode(model.QueryObject()!, BinaryOperator.NullishCoalescing,
+                        new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty))
+                    : model.QueryObject()!;
+                var parseCall = _validation.ValidateNamed($"{opName}QueryParamsSchema", queryInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedQuery"),
                     type: null,
@@ -90,7 +97,13 @@ public partial class TypeScriptAstBuilder
             // Тело запроса валидируется схемой, построенной из типа тела (модель/union/...) выбранной библиотекой.
             if (hasBody && ValidationTypes.IsValidatable(rb!.Type))
             {
-                var parseCall = _validation.Validate(rb.Type, model.BodyObject()!);
+                var validatedBody = _validation.Validate(rb.Type, model.BodyObject()!);
+                var parseCall = model.BodyMayBeUndefined
+                    ? (ExpressionNode)new ConditionalExpressionNode(
+                        new BinaryExpressionNode(model.BodyObject()!, BinaryOperator.NotEqual, Id("undefined")),
+                        validatedBody,
+                        Id("undefined"))
+                    : validatedBody;
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedBody"),
                     type: null,
@@ -102,9 +115,9 @@ public partial class TypeScriptAstBuilder
                 ctx.LeadingStatements.Add(CreateBlankLineStatement());
         }
 
-        if (rb is { IsMultipartFormData: true } && bodySource != null)
+        if (rb is { IsForm: true } && bodySource != null)
         {
-            bodySource = BuildMultipartFormData(rb, bodySource, ctx.LeadingStatements);
+            bodySource = TypeScriptFormBody.Build(rb, bodySource, ModelsByName, ctx.LeadingStatements);
             ctx.LeadingStatements.Add(CreateBlankLineStatement());
         }
 
@@ -114,177 +127,6 @@ public partial class TypeScriptAstBuilder
         ctx.HeadersSource = headersSource;
         ctx.QueryMayBeUndefined = queryMayBeUndefined;
         return ctx;
-    }
-
-    /// <summary>
-    /// Materializes a multipart request model into browser <see cref="FormData"/> instead of passing the parsed
-    /// model object to the transport, which Axios would serialize as JSON.
-    /// </summary>
-    /// <param name="requestBody">The multipart request body whose model properties define the wire fields.</param>
-    /// <param name="bodySource">The validated or raw TypeScript request model expression.</param>
-    /// <param name="statements">The endpoint statements that receive the <c>FormData</c> construction.</param>
-    /// <returns>The <c>formData</c> expression, or <paramref name="bodySource"/> when the multipart model is unavailable.</returns>
-    private ExpressionNode BuildMultipartFormData(
-        IrRequestBody requestBody,
-        ExpressionNode bodySource,
-        List<StatementNode> statements)
-    {
-        if (requestBody.Type is not IrModelReference modelReference
-            || !ModelsByName.TryGetValue(modelReference.ModelName, out var model))
-        {
-            return bodySource;
-        }
-
-        var formData = Id("formData");
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("formData"),
-            type: null,
-            initializer: new CallExpressionNode(
-                Id("FormData"),
-                ImmutableList<ExpressionNode>.Empty,
-                isNewExpression: true)));
-
-        foreach (var property in model.Properties)
-        {
-            var value = Member(bodySource, property.Name);
-            var append = BuildMultipartAppendStatement(
-                formData,
-                property.OriginalName,
-                value,
-                property.Type);
-            var isPresent = new BinaryExpressionNode(
-                new BinaryExpressionNode(value, BinaryOperator.NotEqual, Id("undefined")),
-                BinaryOperator.LogicalAnd,
-                new BinaryExpressionNode(value, BinaryOperator.NotEqual, Id("null")));
-            statements.Add(new IfStatementNode(
-                isPresent,
-                new BlockNode(ImmutableList.Create<StatementNode>(append))));
-        }
-
-        return formData;
-    }
-
-    /// <summary>
-    /// Builds one multipart append statement, preserving repeated wire fields for array-valued properties.
-    /// </summary>
-    /// <param name="formData">The <c>FormData</c> local receiving the value.</param>
-    /// <param name="wireName">The original OpenAPI form field name.</param>
-    /// <param name="value">The property value expression.</param>
-    /// <param name="type">The property type that controls scalar/binary conversion.</param>
-    /// <returns>A scalar append or a <c>for...of</c> statement for arrays.</returns>
-    private static StatementNode BuildMultipartAppendStatement(
-        IdentifierExpressionNode formData,
-        string wireName,
-        MemberAccessExpressionNode value,
-        IrType type)
-    {
-        if (TryGetMultipartArrayElementType(type, out var elementType))
-        {
-            var item = Id("item");
-            var appendItem = BuildMultipartAppendCall(formData, wireName, item, elementType);
-            return new ForEachStatementNode(
-                new IdentifierNode("item"),
-                value,
-                new BlockNode(ImmutableList.Create<StatementNode>(appendItem)));
-        }
-
-        return BuildMultipartAppendCall(formData, wireName, value, type);
-    }
-
-    /// <summary>
-    /// Builds the <c>FormData.append</c> call for one non-null scalar or binary multipart value.
-    /// </summary>
-    /// <param name="formData">The destination <c>FormData</c> local.</param>
-    /// <param name="wireName">The original OpenAPI form field name.</param>
-    /// <param name="value">The value expression to append.</param>
-    /// <param name="type">The value type that determines binary versus text encoding.</param>
-    /// <returns>The append expression statement.</returns>
-    private static ExpressionStatementNode BuildMultipartAppendCall(
-        IdentifierExpressionNode formData,
-        string wireName,
-        ExpressionNode value,
-        IrType type)
-    {
-        ExpressionNode appendValue = IsMultipartBinary(type)
-            ? value
-            : IsMultipartStructured(type)
-                ? ExpressionBuilders.BuildJsonStringify(value)
-                : new CallExpressionNode(Id("String"), ImmutableList.Create(value));
-        return new ExpressionStatementNode(new CallExpressionNode(
-            Member(formData, "append"),
-            ImmutableList.Create<ExpressionNode>(Str(wireName), appendValue)));
-    }
-
-    /// <summary>
-    /// Determines whether the supplied multipart property must be appended as a binary value rather than converted
-    /// to text.
-    /// </summary>
-    /// <param name="type">The property type from the operation model.</param>
-    /// <returns><see langword="true"/> for binary/file values; otherwise <see langword="false"/>.</returns>
-    private static bool IsMultipartBinary(IrType type)
-    {
-        while (type is IrNullableType { InnerType: var nullableType })
-        {
-            type = nullableType;
-        }
-
-        while (type is IrOptionalType { InnerType: var optionalType })
-        {
-            type = optionalType;
-        }
-
-        return type is IrPrimitiveType
-        {
-            PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
-        };
-    }
-
-    /// <summary>
-    /// Determines whether a multipart field has structured JSON semantics rather than scalar text semantics.
-    /// </summary>
-    /// <param name="type">The property or array-element type to inspect.</param>
-    /// <returns><see langword="true"/> when the field must be serialized with <c>JSON.stringify</c>.</returns>
-    private static bool IsMultipartStructured(IrType type)
-    {
-        while (type is IrNullableType { InnerType: var nullableType })
-        {
-            type = nullableType;
-        }
-
-        while (type is IrOptionalType { InnerType: var optionalType })
-        {
-            type = optionalType;
-        }
-
-        return type is IrModelReference or IrDictionaryType or IrUnionType or IrIntersectionType;
-    }
-
-    /// <summary>
-    /// Resolves the element type of a nullable/optional multipart array.
-    /// </summary>
-    /// <param name="type">The property type to inspect.</param>
-    /// <param name="elementType">The array element type when the property is an array.</param>
-    /// <returns><see langword="true"/> when <paramref name="type"/> is an array; otherwise <see langword="false"/>.</returns>
-    private static bool TryGetMultipartArrayElementType(IrType type, out IrType elementType)
-    {
-        while (type is IrNullableType { InnerType: var nullableType })
-        {
-            type = nullableType;
-        }
-
-        while (type is IrOptionalType { InnerType: var optionalType })
-        {
-            type = optionalType;
-        }
-
-        if (type is IrArrayType array)
-        {
-            elementType = array.ElementType;
-            return true;
-        }
-
-        elementType = type;
-        return false;
     }
 
     /// <summary>
@@ -310,36 +152,9 @@ public partial class TypeScriptAstBuilder
     /// <returns>The string literal expression.</returns>
     private static LiteralExpressionNode Str(string value) => new(value, LiteralKind.String);
 
-    private static ExpressionNode? BuildFetchHeadersObject(
-        ExpressionNode? headersSource,
-        bool hasJsonBody)
-    {
-        if (!hasJsonBody && headersSource == null)
-            return null;
-
-        if (hasJsonBody && headersSource == null)
-        {
-            return new ObjectLiteralExpressionNode(new[]
-            {
-                new PropertyAssignmentNode(
-                    new IdentifierNode("'Content-Type'"),
-                    new LiteralExpressionNode("application/json", LiteralKind.String))
-            }.ToImmutableList());
-        }
-
-        if (!hasJsonBody && headersSource != null)
-            return CastToHeadersInit(headersSource);
-
-        var placeholder = new IdentifierNode("_");
-        return new ObjectLiteralExpressionNode(new[]
-        {
-            new PropertyAssignmentNode(placeholder, CastToHeadersInit(headersSource!), isSpread: true),
-            new PropertyAssignmentNode(
-                new IdentifierNode("'Content-Type'"),
-                new LiteralExpressionNode("application/json", LiteralKind.String))
-        }.ToImmutableList(), preferMultilineFormat: true);
-    }
-
+    /// <summary>Converts a generated wire-header object to the native fetch HeadersInit boundary type.</summary>
+    /// <param name="source">The generated header object.</param>
+    /// <returns>The fetch-compatible header expression.</returns>
     private static CastExpressionNode CastToHeadersInit(ExpressionNode source)
     {
         // {Op}HeaderParams интерфейс не имеет index-signature, а HeadersInit
@@ -350,19 +165,18 @@ public partial class TypeScriptAstBuilder
             useAsOperator: true);
     }
 
-    /// <summary>Builds a fetch request and handles bodyless successes before parsing JSON.</summary>
-    /// <param name="operation">The operation whose request and responses are emitted.</param>
-    /// <returns>The endpoint function body.</returns>
+    /// <summary>Builds the plain fetch client function body for an operation.</summary>
+    /// <param name="operation">The operation whose request and response flow is generated.</param>
+    /// <returns>The generated function body.</returns>
     private BlockNode BuildFetchFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
         var ctx = PrepareHttpParamSourcesWithOptionalZod(operation);
         statements.AddRange(ctx.LeadingStatements);
 
-        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
+        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(DocumentContext, _namingConverter, BuildType);
         var pathUrlExpr = axiosBuilder.BuildUrlWithSource(operation, ctx.RouteSource);
-        // Explicit URLSearchParams build (shared with the Next.js transport): skips absent optional params
-        // (no `name=undefined`) and lets URLSearchParams handle encoding.
+        // The URLSearchParams builder shared with Next.js skips absent optional params and handles encoding.
         var requestUrlExpr = TypeScriptQueryString.AppendQueryToUrl(
             operation, pathUrlExpr, ctx.QuerySource, ctx.QueryMayBeUndefined, statements);
 
@@ -375,8 +189,10 @@ public partial class TypeScriptAstBuilder
         var methodUpper = operation.HttpMethod.ToUpperInvariant();
         var methodLiteral = new LiteralExpressionNode(methodUpper, LiteralKind.String);
 
-        var hasJsonBody = operation.RequestBody != null && operation.RequestBody.IsJson && ctx.BodySource != null;
-        var headersExpr = BuildFetchHeadersObject(ctx.HeadersSource, hasJsonBody);
+        var parameterModel = TypeScriptParameterModel.Create(operation);
+        var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
+            operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined, includeJsonContentType: true);
+        var headersExpr = wireHeaders.Properties.Count == 0 ? null : CastToHeadersInit(wireHeaders);
 
         var initProps = new List<PropertyAssignmentNode>
         {
@@ -397,10 +213,8 @@ public partial class TypeScriptAstBuilder
         }
         else if (operation.RequestBody != null && ctx.BodySource != null)
         {
-            // Не-JSON тело: form-data / url-encoded (params.form) или иной content-type,
-            // напр. application/octet-stream (params.body). Типизированный источник (узкий
-            // интерфейс) не совпадает с BodyInit — кастуем через unknown, runtime строит
-            // FormData/Blob/stream сам.
+            // A typed non-JSON body source does not implement BodyInit directly. Cast through unknown because the
+            // runtime caller supplies the concrete FormData, Blob, stream, or url-encoded body.
             var bodyCast = new CastExpressionNode(
                 new SimpleTypeNode(new IdentifierNode("BodyInit"), isPrimitive: false),
                 new CastExpressionNode(
@@ -443,59 +257,35 @@ public partial class TypeScriptAstBuilder
             initializer: mergedInit));
 
         var fetchName = GetFetchImplementationName();
+        statements.Add(TypeScriptHttpClientInjection.Declaration(fetchName));
         var fetchCall = new CallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(fetchName)),
+            Id("httpClient"),
             new[]
             {
                 new IdentifierExpressionNode(new IdentifierNode("requestUrl")),
                 new IdentifierExpressionNode(new IdentifierNode("init"))
             }.ToImmutableList());
 
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("response"),
-            type: null,
-            initializer: new AwaitExpressionNode(fetchCall)));
-        statements.Add(CreateBlankLineStatement());
-
-        // Fetch must handle documented bodyless successes before attempting response.json().
-        var hasTypedResponses = operation.Responses.Any(r => r.Type != null);
-        foreach (var bodyless in operation.Responses.Where(r => r.Type is null
-            && int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300))
-        {
-            var code = int.Parse(bodyless.StatusCode);
-            ExpressionNode? returnValue = hasTypedResponses
-                ? new ObjectLiteralExpressionNode(new[]
-                {
-                    new PropertyAssignmentNode(new IdentifierNode("status"), new LiteralExpressionNode(code, LiteralKind.Number)),
-                    new PropertyAssignmentNode(new IdentifierNode("body"), new IdentifierExpressionNode(new IdentifierNode("undefined"))),
-                    new PropertyAssignmentNode(new IdentifierNode("isSuccessful"), new LiteralExpressionNode(true, LiteralKind.Boolean)),
-                    new PropertyAssignmentNode(new IdentifierNode("isFailed"), new LiteralExpressionNode(false, LiteralKind.Boolean))
-                }.ToImmutableList())
-                : null;
-            var status = new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("response")), new IdentifierNode("status"));
-            var matches = new BinaryExpressionNode(status, BinaryOperator.Equal, new LiteralExpressionNode(code, LiteralKind.Number));
-            statements.Add(new IfStatementNode(matches,
-                new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(returnValue))), null));
-        }
-        if (!hasTypedResponses)
-            return new BlockNode(statements.ToImmutableList());
-
-        var jsonCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("response")),
-                new IdentifierNode("json")),
-            ImmutableList<ExpressionNode>.Empty);
-
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("responseData"),
-            type: null,
-            initializer: new AwaitExpressionNode(jsonCall)));
-        statements.Add(CreateBlankLineStatement());
-
-        var useResultType = operation.Responses.Any(r => r.Type != null);
+        var useResultType = operation.Responses.Any(response => response.Type != null);
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
             : ExtractReturnType(operation.Responses);
+        if (!useResultType && operationReturnType is SimpleTypeNode { Name.Name: "void" })
+        {
+            statements.Add(new ExpressionStatementNode(new AwaitExpressionNode(fetchCall)));
+            return new BlockNode(statements.ToImmutableList());
+        }
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("response"), type: null, initializer: new AwaitExpressionNode(fetchCall)));
+        statements.Add(CreateBlankLineStatement());
+
+        var responseStatus = Member(Id("response"), "status");
+        var jsonCall = new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty);
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("responseData"), type: null,
+            initializer: TypeScriptResponseBody.Read(operation, responseStatus, new AwaitExpressionNode(jsonCall))));
+        statements.Add(CreateBlankLineStatement());
 
         if (useResultType)
         {
@@ -504,7 +294,7 @@ public partial class TypeScriptAstBuilder
                 new IdentifierNode("status"));
             var responseDataRef = new IdentifierExpressionNode(new IdentifierNode("responseData"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
+                .Where(r => int.TryParse(r.StatusCode, out _))
                 .ToList();
 
             foreach (var resp in responsesWithType)

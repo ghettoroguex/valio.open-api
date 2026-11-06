@@ -1,0 +1,54 @@
+{
+  "openapi": "3.1.2",
+  "info": { "title": "First concurrent document", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "SharedRecord": {
+        "type": "object",
+        "description": "The first request must keep its own eighteen model properties.",
+        "required": ["firstText", "firstCount", "state", "sharedValue"],
+        "properties": {
+          "firstText": { "type": "string", "description": "Text exclusive to the first document." },
+          "firstCount": { "type": "integer", "format": "int32" },
+          "firstEnabled": { "type": "boolean" },
+          "firstRatio": { "type": "number", "format": "double" },
+          "firstLabels": { "type": "array", "items": { "type": "string" } },
+          "firstCounters": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "firstDetails": { "$ref": "#/components/schemas/SharedDetails" },
+          "firstStates": { "type": "array", "items": { "$ref": "#/components/schemas/SharedState" } },
+          "state": { "$ref": "#/components/schemas/SharedState" },
+          "sharedValue": { "type": "string" },
+          "firstDescription": { "type": "string" },
+          "firstSequence": { "type": "integer", "format": "int64" },
+          "firstScores": { "type": "array", "items": { "type": "number" } },
+          "firstFlags": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "firstCode": { "type": "string" },
+          "firstNotes": { "type": "string" },
+          "firstIndex": { "type": "integer" },
+          "firstActive": { "type": "boolean" }
+        }
+      },
+      "SharedDetails": {
+        "type": "object",
+        "description": "A second declaration with ten first-document fields exercises repeated rendering.",
+        "properties": {
+          "firstName": { "type": "string" },
+          "firstAddress": { "type": "string" },
+          "firstAttempts": { "type": "integer" },
+          "firstVerified": { "type": "boolean" },
+          "firstTotal": { "type": "number" },
+          "firstOwner": { "type": "string" },
+          "firstRevision": { "type": "integer" },
+          "firstTags": { "type": "array", "items": { "type": "string" } },
+          "firstVisible": { "type": "boolean" },
+          "firstPriority": { "type": "integer" }
+        }
+      },
+      "SharedState": {
+        "type": "string",
+        "enum": ["firstReady", "firstDone", "firstArchived"]
+      }
+    }
+  }
+}

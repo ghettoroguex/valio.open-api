@@ -10,6 +10,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 
@@ -25,6 +26,10 @@ public sealed class TypeBoxAstBuilder
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
     }
 
+    /// <summary>Builds a model schema, applying sibling properties to every union or intersection arm.</summary>
+    /// <param name="model">The model being validated.</param>
+    /// <returns>The complete TypeBox schema, wrapped recursively when necessary.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -36,26 +41,25 @@ public sealed class TypeBoxAstBuilder
                 .Select(type => BuildSchemaFromIrType(type, model.Name))
                 .ToList();
 
-            if (model.Properties.Count > 0)
-                expressions.Add(BuildObjectSchema(model));
-
             body = model.Composition.Kind switch
             {
                 IrCompositionKind.AllOf => BuildIntersection(expressions),
-                IrCompositionKind.OneOf or IrCompositionKind.AnyOf => BuildUnion(expressions),
+                IrCompositionKind.OneOf => ExclusiveUnionAst.TypeBox(expressions),
+                IrCompositionKind.AnyOf => BuildUnion(expressions),
                 _ => BuildObjectSchema(model)
             };
+
+            if (model.Properties.Count > 0)
+                body = BuildIntersection([body, BuildObjectSchema(model)]);
         }
         else
         {
             body = BuildObjectSchema(model);
         }
 
-        // Если модель ссылается сама на себя — оборачиваем в Type.Recursive((This) => ...).
-        // BuildSchemaFromIrType при currentModelName подставит Id("This") вместо {ModelName}Schema.
+        // Type.Recursive binds self references to the callback's This schema.
         if (IsSelfRecursive(model))
         {
-            // Type.Recursive((This) => Type.Object({ ..., children: Type.Array(This) }))
             var arrow = new ArrowFunctionExpressionNode(
                 ImmutableList.Create(
                     new ParameterDeclarationNode(new IdentifierNode("This"), type: null, isRequired: true)),
@@ -129,11 +133,23 @@ public sealed class TypeBoxAstBuilder
         return Call("Union", mapCall);
     }
 
+    /// <summary>Builds a schema preserving wrappers, constraints, and exact-one alternative semantics.</summary>
+    /// <param name="irType">The IR type to validate.</param>
+    /// <param name="currentModelName">The model for recursive self references.</param>
+    /// <param name="constraints">Constraints on the current value.</param>
+    /// <returns>The TypeBox schema expression.</returns>
     public ExpressionNode BuildSchemaFromIrType(
         IrType irType,
         string? currentModelName = null,
         IrPropertyConstraints? constraints = null)
     {
+        constraints ??= irType.Constraints;
+        if (irType is IrPrimitiveType constrainedPrimitive && constrainedPrimitive.Constraints is { } local
+            && constraints is not null && !ValidationConstraints.Equivalent(local, constraints))
+            return BuildIntersection([
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, local),
+                BuildPrimitive(constrainedPrimitive.PrimitiveKind, constraints)
+            ]);
         return irType switch
         {
             IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, constraints),
@@ -150,7 +166,9 @@ public sealed class TypeBoxAstBuilder
                 Call("Null")
             ]),
             IrOptionalType optional => Call("Optional", BuildSchemaFromIrType(optional.InnerType, currentModelName, constraints)),
-            IrUnionType union => BuildUnion(union.Types.Select(type => BuildSchemaFromIrType(type, currentModelName, constraints))),
+            IrUnionType union => union.Kind == IrUnionKind.OneOf
+                ? ExclusiveUnionAst.TypeBox(union.Types.Select(type => BuildSchemaFromIrType(type, currentModelName, constraints)).ToArray())
+                : BuildUnion(union.Types.Select(type => BuildSchemaFromIrType(type, currentModelName, constraints))),
             IrIntersectionType intersection => BuildIntersection(intersection.Types.Select(type => BuildSchemaFromIrType(type, currentModelName, constraints))),
             _ => Call("Unknown")
         };
@@ -194,18 +212,22 @@ public sealed class TypeBoxAstBuilder
         return property.IsRequired ? expression : Call("Optional", expression);
     }
 
+    /// <summary>Builds a primitive schema matching the generated runtime representation.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="constraints">The primitive's value constraints.</param>
+    /// <returns>The constrained primitive schema.</returns>
     private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, IrPropertyConstraints? constraints)
     {
         return kind switch
         {
             IrPrimitiveKind.String => CallOptional("String", BuildStringOptions(null, constraints)),
             IrPrimitiveKind.Uuid => BuildUuidSchema(constraints),
-            IrPrimitiveKind.Date => CallOptional("String", BuildStringOptions("date", constraints)),
-            IrPrimitiveKind.DateTime => CallOptional("String", BuildStringOptions("date-time", constraints)),
-            IrPrimitiveKind.Time => CallOptional("String", BuildStringOptions("time", constraints)),
-            IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File => Call(
-                "String",
-                Object(("contentEncoding", String("base64")))),
+            IrPrimitiveKind.Date => BuildFormattedString("date", constraints),
+            IrPrimitiveKind.DateTime => BuildFormattedString("date-time", constraints),
+            IrPrimitiveKind.Time => BuildFormattedString("time", constraints),
+            IrPrimitiveKind.Binary => TypeBoxInstanceAst.Build("Blob"),
+            IrPrimitiveKind.File => TypeBoxInstanceAst.Build("File"),
+            IrPrimitiveKind.ByteArray => Call("Uint8Array"),
             IrPrimitiveKind.Integer or IrPrimitiveKind.Long => CallOptional("Integer", BuildNumberOptions(constraints)),
             IrPrimitiveKind.Number => CallOptional("Number", BuildNumberOptions(constraints)),
             IrPrimitiveKind.Boolean => Call("Boolean"),
@@ -251,9 +273,21 @@ public sealed class TypeBoxAstBuilder
             TypeScriptOptionIds.UuidFormat.String => CallOptional("String", BuildStringOptions(null, constraints)),
             TypeScriptOptionIds.UuidFormat.Regex => Call("String",
                 BuildStringOptionsWithPattern(Id(TypeScriptOptionIds.UuidFormat.PatternConstName), constraints)),
-            _ => CallOptional("String", BuildStringOptions("uuid", constraints)),
+            _ => BuildFormattedString("uuid", constraints),
         };
     }
+
+    /// <summary>Determines whether the selected representation emits standard registered string formats.</summary>
+    /// <param name="type">The recursively inspected inline type.</param>
+    /// <returns>True when a FormatRegistry runtime import is required.</returns>
+    internal bool RequiresFormatRegistry(IrType type) => TypeBoxFormatAst.RequiresRegistry(type, _uuidFormat);
+
+    /// <summary>Builds a formatted string after registering its standard runtime predicate.</summary>
+    /// <param name="format">The standard format name.</param>
+    /// <param name="constraints">Additional string value constraints.</param>
+    /// <returns>The registered and constrained string schema.</returns>
+    private static ExpressionNode BuildFormattedString(string format, IrPropertyConstraints? constraints) =>
+        TypeBoxFormatAst.Register(format, CallOptional("String", BuildStringOptions(format, constraints)));
 
     /// <summary>
     /// String options carrying an explicit <c>pattern</c> expression (e.g. the imported

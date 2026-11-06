@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,26 +17,34 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Создаёт интерфейсы параметров с под-интерфейсами Route/Query/Body/Form (по аналогии с UE Cpp).
 /// При одной группе параметров — плоская структура без вложенности.
 /// </summary>
-public sealed class TypeScriptParamsAstBuilder
+public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
+    /// <summary>Controls emission of explicit parameter defaults.</summary>
+    private readonly bool _generateDefaultValues;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public TypeScriptParamsAstBuilder(
+    /// <summary>Creates a TypeScriptParamsAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="generateDefaultValues">Whether to export explicit defaults.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TypeScriptParamsAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
-        Func<IrType, TypeNode> typeBuilder)
+        Func<IrType, TypeNode> typeBuilder, bool generateDefaultValues = false)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+        _generateDefaultValues = generateDefaultValues;
     }
 
-    /// <summary>Builds a parameter value type while keeping presence independent of nullability.</summary>
+    /// <summary>Builds a parameter value type independently of member presence.</summary>
     /// <param name="type">The parameter or body type.</param>
-    /// <param name="isRequired">Whether the property must be present.</param>
-    /// <returns>The TypeScript value type; the declaration carries the optional marker.</returns>
+    /// <param name="isRequired">Whether the member must be present.</param>
+    /// <returns>The value type without its member-level optional wrapper.</returns>
     private TypeNode BuildIrMemberTypeNode(IrType type, bool isRequired)
     {
         return _typeBuilder(UnwrapMemberOptional(type));
@@ -99,16 +108,19 @@ public sealed class TypeScriptParamsAstBuilder
         };
     }
 
-    /// <summary>
-    /// Строит SourceFileNode с Params-интерфейсами для операции
-    /// </summary>
+    /// <summary>Builds parameter interfaces and their exported metadata for an operation.</summary>
+    /// <param name="operation">The operation whose parameters are generated.</param>
+    /// <param name="importPath">An optional import path override.</param>
+    /// <param name="fileOrganization">The generated file layout.</param>
+    /// <param name="currentOperationName">The current operation identifier.</param>
+    /// <returns>The source file containing the parameter declarations.</returns>
     public SourceFileNode BuildParamsSourceFile(
         IrOperation operation,
         string? importPath,
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
@@ -175,6 +187,18 @@ public sealed class TypeScriptParamsAstBuilder
         if (queryConstraints != null)
             declarations.Add(queryConstraints);
 
+        if (_generateDefaultValues)
+        {
+            var routeDefaults = TypeScriptDefaultValues.Build($"{opName}RouteParamsDefaultValues",
+                operation.PathParameters.Where(p => p.DefaultValue != null)
+                    .Select(p => (p.Name, System.Text.Json.JsonSerializer.SerializeToElement(p.DefaultValue))));
+            var queryDefaults = TypeScriptDefaultValues.Build($"{opName}QueryParamsDefaultValues",
+                operation.QueryParameters.Where(p => p.DefaultValue != null)
+                    .Select(p => (p.Name, System.Text.Json.JsonSerializer.SerializeToElement(p.DefaultValue))));
+            if (routeDefaults != null) declarations.Add(routeDefaults);
+            if (queryDefaults != null) declarations.Add(queryDefaults);
+        }
+
         // Собираем все модели-зависимости: body/form (включая массивы и т.п.) +
         // route/query/header параметры. Дедупим по имени.
         var allDependencies = new HashSet<string>(StringComparer.Ordinal);
@@ -202,6 +226,9 @@ public sealed class TypeScriptParamsAstBuilder
                 $"Request parameter types for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildRouteParamsInterface(IrOperation operation)
     {
         var routeName = RouteParamsInterfaceName(operation.MethodName);
@@ -223,6 +250,9 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Route/path parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildQueryParamsInterface(IrOperation operation)
     {
         var queryName = QueryParamsInterfaceName(operation.MethodName);
@@ -244,6 +274,9 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Query string parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildHeadersParamsInterface(IrOperation operation)
     {
         var headersName = $"{_namingConverter.ToPascalCase(operation.MethodName)}HeaderParams";
@@ -265,6 +298,11 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Header parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasBody">Whether the operation exposes a non-form body.</param>
+    /// <param name="hasForm">Whether the operation exposes a form body.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildFlatParamsInterface(IrOperation operation, bool hasBody, bool hasForm)
     {
         var paramsName = ParamsInterfaceName(operation.MethodName);
@@ -323,6 +361,14 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasRoute">Whether the operation exposes path parameters.</param>
+    /// <param name="hasQuery">Whether the operation exposes query parameters.</param>
+    /// <param name="hasBody">Whether the operation exposes a non-form body.</param>
+    /// <param name="hasForm">Whether the operation exposes a form body.</param>
+    /// <param name="hasHeaders">Whether the operation exposes header parameters.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildAggregateParamsInterface(
         IrOperation operation,
         bool hasRoute,
@@ -361,7 +407,8 @@ public sealed class TypeScriptParamsAstBuilder
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("headers"),
                 type: new SimpleTypeNode(new IdentifierNode(headersName), isPrimitive: false, isNullable: false, isOptional: false),
-                isRequired: false,
+                isRequired: operation.HeaderParameters.Any(parameter =>
+                    parameter.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(parameter.Type)),
                 documentation: new CommentNode("HTTP header parameters", CommentKind.JSDoc)));
         }
 
@@ -450,7 +497,7 @@ public sealed class TypeScriptParamsAstBuilder
 
     private ImportNode CreateModelImport(string typeName, FileOrganization? fileOrganization)
     {
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(typeName, typeName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, typeName));
         var relativePath = $"../../{fileOrganization?.ModelsPath ?? "models"}/{modelFileName}/{modelFileName}";
         return new ImportNode(
             items: new[] { new IdentifierNode(typeName) }.ToImmutableList(),
