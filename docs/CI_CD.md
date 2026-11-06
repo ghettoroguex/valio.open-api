@@ -97,6 +97,8 @@ In the personal NuGet account, configure a policy owned by `valio-projects`:
 
 - GitHub owner `valio-projects`, repository `valio.open-api`.
 - Workflow filename `release.yml`, environment `production`.
+- Allowed actions: enable **Allow npm publish**; staged publishing alone does
+  not authorize this workflow's direct `npm publish` commands.
 - Push new packages and versions, pattern `ValIO.*`.
 
 Set `NUGET_USER` to the personal username, not the organization or an email.
