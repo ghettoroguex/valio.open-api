@@ -20,7 +20,7 @@ public sealed class DefaultValuesGenerationTests
        {"name":"text","in":"query","schema":{"type":"string","default":""}}
      ],"responses":{"200":{"description":"ok"}}}}},
      "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing"],"properties":{
-       "MobileVisible":{"type":"boolean","default":true},"disabled":{"type":"boolean","default":false},
+       "MobileVisible":{"type":"boolean","default":true,"description":"Первая строка\nВторая строка\nТретья строка"},"disabled":{"type":"boolean","default":false},
        "count":{"type":"integer","minimum":0,"default":0},"text":{"type":"string","default":""},
        "missing":{"type":"string"},"nullable":{"type":"string","nullable":true,"default":null},
        "items":{"type":"array","items":{"type":"integer"},"default":[0,1]},
@@ -43,6 +43,7 @@ public sealed class DefaultValuesGenerationTests
         index.Should().Contain("./models/settings/settings").And.Contain("./api/getItems/getItems.params");
         var parameters = context.GeneratedFiles.Single(f => f.RelativePath.EndsWith(".params.ts")).Content;
         model.Should().Contain("MobileVisible: boolean;").And.Contain("@default true");
+        model.Should().MatchRegex(@"\* @description Первая строка\r?\n\s*\* Вторая строка\r?\n\s*\* Третья строка");
         model.Should().Contain("SettingsConstraints");
         if (!enabled)
         {

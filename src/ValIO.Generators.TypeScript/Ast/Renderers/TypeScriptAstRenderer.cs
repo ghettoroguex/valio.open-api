@@ -786,6 +786,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
+    /// <summary>Renders a function declaration and its JSDoc annotations.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The function declaration.</param>
+    /// <param name="indentLevel">The declaration indentation level.</param>
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
         // Формируем расширенный JSDoc комментарий
@@ -856,7 +860,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, "/**");
             foreach (var line in jsDocLines)
             {
-                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+                foreach (var part in line.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
+                    CodeFormatter.AppendLine(sb, indentLevel, $" * {part}");
             }
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
@@ -1122,7 +1127,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, "/**");
             foreach (var line in jsDocLines)
             {
-                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+                foreach (var part in line.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
+                    CodeFormatter.AppendLine(sb, indentLevel, $" * {part}");
             }
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
