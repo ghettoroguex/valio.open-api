@@ -32,35 +32,18 @@ public sealed class TypeScriptModelsStep : ICodeGenerationStep
     public bool ShouldExecute(GenerationContext context)
         => context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0;
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var builder = new TypeScriptAstBuilder(_namingConverter, opts);
+        var builder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
-
-        // Даём построителю справочник моделей — чтобы BuildInterface резолвил наследование allOf
-        // и не переобъявлял свойства базовых классов.
-        builder.ModelsByName = byName;
-
-        var processed = new HashSet<string>();
-
-        // Топологический порядок сначала
-        foreach (var name in orderedNames)
+        foreach (var model in context.DocumentContext.ModelsInDependencyOrder)
         {
-            if (!byName.TryGetValue(name, out var model)) continue;
+            ct.ThrowIfCancellationRequested();
             AddModelFile(context, builder, model, modelsPath);
-            processed.Add(name);
-        }
-
-        // Оставшиеся модели (не попавшие в граф зависимостей)
-        foreach (var model in context.IrDocument.Models)
-        {
-            if (!processed.Contains(model.Name))
-                AddModelFile(context, builder, model, modelsPath);
         }
 
         return Task.CompletedTask;

@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -30,8 +31,9 @@ namespace ValIO.Generators.TypeScript.Nextjs.Ast.Builders;
 /// are merged in, with per-field override. Everything else — the parameter/result types, schemas,
 /// validation and the discriminable <c>{Op}Results</c> union — is shared verbatim with the other transports.
 /// </remarks>
-public sealed class NextjsClientAstBuilder
+public sealed class NextjsClientAstBuilder : AstBuilderBase
 {
+
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
@@ -39,22 +41,22 @@ public sealed class NextjsClientAstBuilder
     private readonly int? _defaultRevalidate;
     private readonly bool _generateRevalidateHelpers;
 
-    /// <summary>Map «affix name → original name» so import paths use the un-affixed name.</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Creates the builder, resolving the validation strategy and the Next.js-specific options.
-    /// </summary>
-    /// <param name="namingConverter">The naming converter.</param>
-    /// <param name="options">The TypeScript generation options (validation library, Next.js settings, etc.).</param>
-    public NextjsClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    /// <summary>Creates a NextjsClientAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public NextjsClientAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = Validation.ClientValidationStrategyFactory.Create(options);
 
-        var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
+        var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
 
         _defaultRevalidate = options?.NextJs?.DefaultRevalidate;
         _generateRevalidateHelpers = options?.NextJs?.GenerateRevalidateHelpers ?? true;
@@ -70,7 +72,7 @@ public sealed class NextjsClientAstBuilder
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
@@ -97,6 +99,13 @@ public sealed class NextjsClientAstBuilder
                 $"Next.js (App Router) fetch client for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Imports the native transport types and operation-specific models and validation schemas.</summary>
+    /// <param name="operation">The operation whose imports are generated.</param>
+    /// <param name="operationFileName">The original operation file name.</param>
+    /// <param name="fileOrganization">The configured output layout.</param>
+    /// <param name="hasParameters">Whether a generated parameter type is needed.</param>
+    /// <param name="hasResultType">Whether a generated result union is needed.</param>
+    /// <returns>The imports required by the native client operation.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
@@ -267,6 +276,13 @@ public sealed class NextjsClientAstBuilder
             isExported: true);
     }
 
+    /// <summary>Builds a native client operation with backward-compatible options, cancellation, and client injection.</summary>
+    /// <param name="operation">The operation whose callable API is generated.</param>
+    /// <param name="hasParameters">Whether the operation accepts a parameter object.</param>
+    /// <param name="hasResultType">Whether the operation returns a response union.</param>
+    /// <param name="isCacheable">Whether Next.js cache metadata is generated.</param>
+    /// <param name="cacheTagsFnName">The generated cache-tag helper name.</param>
+    /// <returns>The generated operation declaration.</returns>
     private FunctionDeclarationNode BuildOperationFunction(
         IrOperation operation,
         bool hasParameters,
@@ -297,6 +313,8 @@ public sealed class NextjsClientAstBuilder
             type: Simple("AbortSignal"),
             isRequired: false));
 
+        parameters.Add(TypeScriptHttpClientInjection.Parameter(new TypeQueryTypeNode(Id("fetch"))));
+
         return new FunctionDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
             returnType: new GenericTypeNode(new IdentifierNode("Promise"), ImmutableList.Create(returnType)),
@@ -307,13 +325,27 @@ public sealed class NextjsClientAstBuilder
             isExported: true);
     }
 
+    /// <summary>Builds validation, serialized request data, and response dispatch for one operation.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasParameters">Whether the operation accepts a parameter object.</param>
+    /// <param name="hasResultType">Whether the operation returns a generated result union.</param>
+    /// <param name="isCacheable">Whether Next.js cache metadata is emitted.</param>
+    /// <param name="cacheTagsFnName">The generated operation cache-tag helper name.</param>
+    /// <returns>The operation function body.</returns>
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasParameters, bool hasResultType, bool isCacheable, string cacheTagsFnName)
     {
         var statements = new List<StatementNode>();
+        statements.Add(TypeScriptHttpClientInjection.Declaration("fetch"));
         var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
             AddValidationParsingStatements(operation, sources, statements);
+
+        if (operation.RequestBody is { IsForm: true } requestBody && sources.BodySource != null)
+        {
+            sources.BodySource = TypeScriptFormBody.Build(requestBody, sources.BodySource, ModelsByName, statements);
+            statements.Add(new BlankLineStatementNode());
+        }
 
         // fetch has no structured `query` option → build a URLSearchParams and fold it into the URL.
         var urlExpression = BuildUrlWithQuery(operation, sources, statements);
@@ -321,14 +353,18 @@ public sealed class NextjsClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(new IdentifierNode("requestUrl"), type: null, initializer: urlExpression));
         statements.Add(new BlankLineStatementNode());
 
+        var requestHeaders = TypeScriptFetchHeaders.Build(
+            operation, sources.HeadersSource, sources.HeadersSourceMayBeUndefined,
+            Member(Id("options"), "headers", optional: true), statements);
+
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestInit"),
             type: null,
-            initializer: BuildFetchInit(operation, sources, hasParameters, isCacheable, cacheTagsFnName)));
+            initializer: BuildFetchInit(operation, sources, requestHeaders, hasParameters, isCacheable, cacheTagsFnName)));
         statements.Add(new BlankLineStatementNode());
 
         var fetchCall = new CallExpressionNode(
-            Id("fetch"),
+            Id("httpClient"),
             ImmutableList.Create<ExpressionNode>(Id("requestUrl"), Id("requestInit")));
 
         if (!hasResultType)
@@ -348,10 +384,7 @@ public sealed class NextjsClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"),
             type: null,
-            initializer: new ConditionalExpressionNode(
-                new BinaryExpressionNode(Member(Id("response"), "status"), BinaryOperator.Equal, Number(204)),
-                Id("undefined"),
-                bodyJson)));
+            initializer: TypeScriptResponseBody.Read(operation, Member(Id("response"), "status"), bodyJson)));
         statements.Add(new BlankLineStatementNode());
 
         AddStatusResultBranches(operation, statements);
@@ -372,6 +405,10 @@ public sealed class NextjsClientAstBuilder
             operation, pathExpression, sources.QuerySource, sources.QuerySourceMayBeUndefined, statements);
     }
 
+    /// <summary>Validates present parameter groups while preserving optional request-body absence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <param name="statements">The endpoint statements receiving validation or request construction.</param>
     private void AddValidationParsingStatements(IrOperation operation, TypeScriptParameterSources sources, List<StatementNode> statements)
     {
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
@@ -402,9 +439,13 @@ public sealed class NextjsClientAstBuilder
         {
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedBody"), type: null,
-                initializer: _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
+                initializer: sources.BodySourceMayBeUndefined
+                    ? new ConditionalExpressionNode(
+                        new BinaryExpressionNode(sources.BodySource, BinaryOperator.NotEqual, Id("undefined")),
+                        _validation.Validate(operation.RequestBody.Type, sources.BodySource),
+                        Id("undefined"))
+                    : _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
             sources.BodySource = Id("parsedBody");
-            sources.BodySourceMayBeUndefined = false;
         }
 
         if (statements.Count > 0)
@@ -416,7 +457,14 @@ public sealed class NextjsClientAstBuilder
     /// then <c>method</c>, merged <c>headers</c>, JSON <c>body</c>, the Next <c>next</c> config (GET only,
     /// caller-overridable per field), and the optional <c>signal</c>.
     /// </summary>
-    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources, bool hasParameters, bool isCacheable, string cacheTagsFnName)
+    /// <param name="operation">The operation whose fetch initialization object is generated.</param>
+    /// <param name="sources">The validated parameter sources used to populate headers and the request body.</param>
+    /// <param name="requestHeaders">The normalized headers with caller overrides and operation defaults.</param>
+    /// <param name="hasParameters">Whether the generated operation accepts a parameter object.</param>
+    /// <param name="isCacheable">Whether the operation supports Next.js cache configuration.</param>
+    /// <param name="cacheTagsFnName">The generated helper that derives cache tags for the operation.</param>
+    /// <returns>The generated <c>RequestInit</c> object literal.</returns>
+    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources, ExpressionNode requestHeaders, bool hasParameters, bool isCacheable, string cacheTagsFnName)
     {
         var props = new List<PropertyAssignmentNode>
         {
@@ -425,21 +473,7 @@ public sealed class NextjsClientAstBuilder
             new(new IdentifierNode("method"), String(operation.HttpMethod.ToUpperInvariant())),
         };
 
-        if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
-        {
-            // headers: { ...(paramHeaders ?? {}), ...((options?.headers as Record<string,string>) ?? {}) }
-            var paramHeaders = new BinaryExpressionNode(
-                new CastExpressionNode(RecordStringString(),
-                    new CastExpressionNode(Simple("unknown", isPrimitive: true), sources.HeadersSource, useAsOperator: true), useAsOperator: true),
-                BinaryOperator.NullishCoalescing, EmptyObject());
-            var callerHeaders = new BinaryExpressionNode(
-                new CastExpressionNode(
-                    new UnionTypeNode(ImmutableList.Create<TypeNode>(RecordStringString(), Simple("undefined", isPrimitive: true))),
-                    Member(Id("options"), "headers", optional: true), useAsOperator: true),
-                BinaryOperator.NullishCoalescing, EmptyObject());
-            props.Add(new PropertyAssignmentNode(new IdentifierNode("headers"),
-                new ObjectLiteralExpressionNode(ImmutableList.Create(SpreadProperty(paramHeaders), SpreadProperty(callerHeaders)))));
-        }
+        props.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), requestHeaders));
 
         if (operation.RequestBody != null && sources.BodySource != null)
         {
@@ -493,13 +527,16 @@ public sealed class NextjsClientAstBuilder
         return new ObjectLiteralExpressionNode(nextProps.ToImmutableList(), preferMultilineFormat: true);
     }
 
+    /// <summary>Adds a result branch for every documented numeric status, including responses without content.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="statements">The function statements receiving the response branches.</param>
     private void AddStatusResultBranches(IrOperation operation, List<StatementNode> statements)
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         var responseStatus = Member(Id("response"), "status");
         var responseData = Id("responseData");
 
-        foreach (var response in operation.Responses.Where(r => r.Type != null && int.TryParse(r.StatusCode, out _)))
+        foreach (var response in operation.Responses.Where(r => int.TryParse(r.StatusCode, out _)))
         {
             var statusCode = int.Parse(response.StatusCode);
             var isSuccessful = statusCode >= 200 && statusCode < 300;
@@ -534,8 +571,15 @@ public sealed class NextjsClientAstBuilder
             useAsOperator: true));
     }
 
+    /// <summary>Builds undefined for bodyless responses or validates the documented response value.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="response">The documented response variant.</param>
+    /// <param name="responseData">The decoded response data expression.</param>
+    /// <returns>The decoded or validated response body value.</returns>
     private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
+        if (response.Type == null)
+            return Id("undefined");
         if (!_validation.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
             return responseData;
         if (response.Type is IrModelReference modelRef)
@@ -548,7 +592,7 @@ public sealed class NextjsClientAstBuilder
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         return fileOrganization.SeparateModels
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";
@@ -607,13 +651,6 @@ public sealed class NextjsClientAstBuilder
         // RequestInit & { next?: { … } }
         return new IntersectionTypeNode(ImmutableList.Create<TypeNode>(Simple("RequestInit"), augmentation));
     }
-
-    /// <summary>Builds the composed generic type <c>Record&lt;string, string&gt;</c> (no raw type string).</summary>
-    /// <returns>A <see cref="GenericTypeNode"/> for <c>Record&lt;string, string&gt;</c>.</returns>
-    private static TypeNode RecordStringString() =>
-        new GenericTypeNode(
-            new IdentifierNode("Record"),
-            ImmutableList.Create<TypeNode>(Simple("string", isPrimitive: true), Simple("string", isPrimitive: true)));
 
     private static SimpleTypeNode Simple(string name, bool isPrimitive = false) => new(new IdentifierNode(name), isPrimitive);
 

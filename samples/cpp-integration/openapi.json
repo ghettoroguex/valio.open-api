@@ -1,0 +1,205 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "ValIO C++ integration sample",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8080"
+    }
+  ],
+  "paths": {
+    "/orders/{order_id}": {
+      "get": {
+        "operationId": "GetOrder",
+        "tags": [
+          "Orders"
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "operationId": "CreateOrder",
+        "tags": [
+          "Orders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Order"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploads": {
+      "post": {
+        "operationId": "UploadFiles",
+        "tags": [
+          "Orders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Upload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Uploaded"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OrderState": {
+        "type": "string",
+        "enum": [
+          "new",
+          "completed"
+        ]
+      },
+      "Identity": {
+        "type": "object",
+        "required": [
+          "order_id"
+        ],
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Order": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Identity"
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "nullable_note",
+              "nullable_items"
+            ],
+            "properties": {
+              "state": {
+                "$ref": "#/components/schemas/OrderState"
+              },
+              "nullable_note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "optional_note": {
+                "type": "string"
+              },
+              "optional_nullable_note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nullable_items": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "attributes": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Upload": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      }
+    }
+  }
+}

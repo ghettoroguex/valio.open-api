@@ -29,11 +29,11 @@ public sealed class SolidStartClientStep : TypeScriptClientStepBase
     public SolidStartClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
         : base(namingConverter, nodeRenderers) { }
 
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
-        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
+        IrDocumentContext documentContext, IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        var builder = new SolidStartClientAstBuilder(NamingConverter, options);
-        builder.ModelsByName = ModelsByName;
+        var builder = new SolidStartClientAstBuilder(documentContext, NamingConverter, options);
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

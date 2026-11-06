@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -18,16 +19,22 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// <c>export const {Op}RouteParamsSchema = ...;</c> / <c>{Op}QueryParamsSchema = ...;</c> и импортируется
 /// всеми транспортами. Библиотека (zod/valibot/typebox) выбирается стратегией — файл от неё не зависит.
 /// </summary>
-public sealed class TypeScriptParamsSchemasAstBuilder
+public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
     private readonly string _uuidFormat;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    internal TypeScriptParamsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null)
+    /// <summary>Creates a TypeScriptParamsSchemasAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="validation">The configured runtime validation strategy.</param>
+    /// <param name="uuidFormat">The configured UUID format policy.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    internal TypeScriptParamsSchemasAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
@@ -56,7 +63,6 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         if (!hasRoute && !hasQuery)
             return null;
 
-        OriginalNameMap.AddOperation(_orig, operation);
 
         // Each param-schema const is annotated with the corresponding params interface (e.g.
         // `: ZodSchema<{Op}QueryParams>`) so it reads like a model schema. The Route/Query sub-interfaces
@@ -195,7 +201,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder
 
         foreach (var modelName in modelNames.OrderBy(n => n, StringComparer.Ordinal))
         {
-            var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+            var modelFile = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
             var from = separateModels
                 ? $"../../{modelsPath}/{modelFile}/{modelFile}.schema"
                 : $"../../{modelsPath}/{modelFile}.schema";

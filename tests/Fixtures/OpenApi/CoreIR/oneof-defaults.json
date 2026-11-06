@@ -1,0 +1,32 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "oneof-defaults.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "ConstraintContainer": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "default": "abc",
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^a",
+                "default": "arm-a"
+              },
+              {
+                "type": "string",
+                "pattern": "^b",
+                "default": "arm-b"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

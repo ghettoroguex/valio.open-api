@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
@@ -6,42 +8,50 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Generators.Python.Ast.Nodes;
 using ValIO.Generators.Python.Options;
 
 namespace ValIO.Generators.Python.Ast.Builders;
 
 /// <summary>
-/// Строит HTTPX-клиент (один класс на IrClient) в виде Python-модуля.
+/// Builds HTTPX client facades that borrow the application's configured transport and authentication pipeline.
 /// </summary>
-public sealed class HttpxClientAstBuilder
+public sealed class HttpxClientAstBuilder : AstBuilderBase
 {
+    /// <summary>Converts source operation and parameter names into Python identifiers.</summary>
     private readonly INamingConverter _namingConverter;
+    /// <summary>Maps shared request and response types into Python annotations.</summary>
     private readonly PythonIrTypeMapper _typeMapper;
 
-    public HttpxClientAstBuilder(INamingConverter namingConverter, PythonIrTypeMapper typeMapper)
+    /// <summary>Initializes the client builder with Python naming and type services.</summary>
+    /// <param name="documentContext">The finalized document context shared by the generation request.</param>
+    /// <param name="namingConverter">The converter for generated identifiers.</param>
+    /// <param name="typeMapper">The mapper for request and response annotations.</param>
+    public HttpxClientAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, PythonIrTypeMapper typeMapper)
+        : base(documentContext)
     {
         _namingConverter = namingConverter;
         _typeMapper = typeMapper;
     }
 
+    /// <summary>Builds a client module using runtime imports for request and response validation.</summary>
+    /// <param name="client">The grouped operations to generate.</param>
+    /// <param name="options">The Python client generation mode.</param>
+    /// <returns>The generated module containing an injected HTTPX client facade.</returns>
+    /// <exception cref="NotSupportedException">An operation declares incompatible successful response bodies.</exception>
     public PythonModuleNode BuildModule(
         IrClient client,
-        IReadOnlyDictionary<string, string> modelModuleByName,
-        IReadOnlyDictionary<string, string> enumModuleByName,
         PythonGenerationOptions options)
     {
         var isAsync = options.HttpxMode == PythonOptionIds.HttpxMode.Async;
         var className = ToClassName(client.Name);
 
-        // Сбор импортов.
         var modelImports = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var datetimeImports = new SortedSet<string>(StringComparer.Ordinal);
         var uuidNeeded = false;
         var anyNeeded = false;
-        var optionalNeeded = false;
 
-        // Собираем методы клиента.
         var methods = new List<DeclarationNode>();
         foreach (var op in client.Operations)
         {
@@ -49,23 +59,18 @@ public sealed class HttpxClientAstBuilder
                 op,
                 isAsync,
                 modelImports,
-                modelModuleByName,
-                enumModuleByName,
                 datetimeImports,
                 ref uuidNeeded,
-                ref anyNeeded,
-                ref optionalNeeded);
+                ref anyNeeded);
             methods.Add(method);
         }
 
-        // Конструктор.
         var ctor = BuildConstructor(isAsync);
         methods.Insert(0, ctor);
 
-        // Модельные импорты используются runtime (Pet.model_validate) — обычные импорты, не TYPE_CHECKING.
         var imports = new List<PythonImportNode>();
 
-        var typingNames = new List<string>();
+        var typingNames = new List<string> { "get_type_hints" };
         if (anyNeeded) typingNames.Add("Any");
         if (typingNames.Count > 0)
             imports.Add(new PythonImportNode("typing", typingNames));
@@ -77,6 +82,11 @@ public sealed class HttpxClientAstBuilder
             imports.Add(new PythonImportNode("uuid", new[] { "UUID" }));
 
         imports.Add(new PythonImportNode("httpx", names: Array.Empty<string>()));
+        imports.Add(new PythonImportNode("pydantic", new[] { "TypeAdapter" }));
+        if (client.Operations.Any(operation => operation.PathParameters.Any(
+                parameter => IrTypeQueries.UnwrapNullableOptional(parameter.Type) is not IrPrimitiveType
+                    { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number })))
+            imports.Add(new PythonImportNode("urllib.parse", new[] { "quote" }));
 
         foreach (var kvp in modelImports)
             imports.Add(new PythonImportNode(kvp.Value, new[] { kvp.Key }));
@@ -96,9 +106,15 @@ public sealed class HttpxClientAstBuilder
             futureImports: new[] { new PythonImportNode("__future__", new[] { "annotations" }) });
     }
 
+    /// <summary>Documents the caller-owned HTTPX pipeline and cancellation behavior.</summary>
+    /// <param name="client">The source client group.</param>
+    /// <returns>The generated class documentation.</returns>
     private static CommentNode BuildClientDocstring(IrClient client) =>
-        new CommentNode($"HTTP client for {client.Name}.", CommentKind.MultiLine);
+        new CommentNode($"HTTP client for {client.Name}.\n\nBorrows the supplied HTTPX client; the caller owns its lifetime.\nConfigure headers, Auth, event_hooks, and timeouts on that client.\nAsync calls propagate asyncio cancellation through the HTTPX transport.", CommentKind.MultiLine);
 
+    /// <summary>Builds a constructor borrowing an existing HTTPX client without closing it.</summary>
+    /// <param name="isAsync">Whether the facade uses an asynchronous HTTPX client.</param>
+    /// <returns>The generated injected-client constructor.</returns>
     private static PythonFunctionDeclarationNode BuildConstructor(bool isAsync)
     {
         var clientAnnotation = new SimpleTypeNode(
@@ -118,53 +134,55 @@ public sealed class HttpxClientAstBuilder
             body: new[] { "self._client = client" });
     }
 
+    /// <summary>Builds a typed operation whose transport calls use the borrowed HTTPX pipeline.</summary>
+    /// <param name="op">The operation to generate.</param>
+    /// <param name="isAsync">Whether transport calls are awaited.</param>
+    /// <param name="modelImports">The runtime declaration imports collected for the module.</param>
+    /// <param name="datetimeImports">The required standard date and time imports.</param>
+    /// <param name="uuidNeeded">Whether UUID annotations require an import.</param>
+    /// <param name="anyNeeded">Whether unconstrained annotations require an import.</param>
+    /// <returns>The generated Python operation declaration.</returns>
+    /// <exception cref="NotSupportedException">Successful response bodies have incompatible types.</exception>
     private PythonFunctionDeclarationNode BuildOperationMethod(
         IrOperation op,
         bool isAsync,
         SortedDictionary<string, string> modelImports,
-        IReadOnlyDictionary<string, string> modelModuleByName,
-        IReadOnlyDictionary<string, string> enumModuleByName,
         SortedSet<string> datetimeImports,
         ref bool uuidNeeded,
-        ref bool anyNeeded,
-        ref bool optionalNeeded)
+        ref bool anyNeeded)
     {
         var methodName = _namingConverter.ToSnakeCase(op.MethodName);
         methodName = PythonKeywords.Avoid(methodName);
 
-        // Параметры: self + path + query + body.
         var parameters = new List<PythonParameterNode>
         {
             new PythonParameterNode(new IdentifierNode("self"))
         };
 
-        // Path-параметры (required).
         foreach (var p in op.PathParameters)
         {
             var annotation = _typeMapper.MapType(p.Type);
-            ScanForImports(p.Type, modelImports, modelModuleByName, enumModuleByName,
+            ScanForImports(p.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             parameters.Add(new PythonParameterNode(
                 new IdentifierNode(PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name))),
                 annotation));
         }
 
-        // Request body.
-        if (op.RequestBody != null)
+        if (op.RequestBody is { IsRequired: true })
         {
             var annotation = _typeMapper.MapType(op.RequestBody.Type);
-            ScanForImports(op.RequestBody.Type, modelImports, modelModuleByName, enumModuleByName,
+            ScanForImports(op.RequestBody.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             parameters.Add(new PythonParameterNode(
                 new IdentifierNode("body"),
                 annotation));
         }
 
-        // Query-параметры (optional → default None).
-        foreach (var p in op.QueryParameters)
+        foreach (var p in op.QueryParameters.Concat(op.HeaderParameters).OrderBy(parameter => !parameter.IsRequired))
         {
             var annotation = _typeMapper.MapType(p.Type);
-            ScanForImports(p.Type, modelImports, modelModuleByName, enumModuleByName,
+            ScanForImports(p.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             string? defaultValue = null;
             if (!p.IsRequired)
@@ -178,41 +196,49 @@ public sealed class HttpxClientAstBuilder
                 defaultValue));
         }
 
-        // Determine response type.
-        var successResponse = op.Responses.FirstOrDefault(r => r.StatusCode.StartsWith("2", StringComparison.Ordinal));
+        if (op.RequestBody is { IsRequired: false } optionalBody)
+        {
+            var annotation = AddNone(_typeMapper.MapType(optionalBody.Type));
+            ScanForImports(optionalBody.Type, modelImports,
+                datetimeImports, ref uuidNeeded, ref anyNeeded);
+            parameters.Add(new PythonParameterNode(new IdentifierNode("body"), annotation, "None"));
+        }
+
+        var successfulResponses = op.Responses.Where(response => response.StatusCode.StartsWith("2", StringComparison.Ordinal)).ToArray();
+        var successResponse = successfulResponses.FirstOrDefault(response => response.Type is not null);
+        if (successResponse?.Type is { } selectedType && successfulResponses.Any(response =>
+                response.Type is not null && !IrTypeComparer.AreSemanticallyEqual(selectedType, response.Type, ignorePresence: false)))
+            throw new NotSupportedException($"Python operation '{op.MethodName}' declares incompatible successful response bodies.");
         TypeNode? returnType = null;
         string? responseModelName = null;
         if (successResponse?.Type != null)
         {
             returnType = _typeMapper.MapType(successResponse.Type);
-            ScanForImports(successResponse.Type, modelImports, modelModuleByName, enumModuleByName,
+            ScanForImports(successResponse.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
-            responseModelName = TryGetSimpleModelName(successResponse.Type);
+            var referencedName = TryGetSimpleModelName(successResponse.Type);
+            responseModelName = referencedName is not null && ModelsByName.ContainsKey(referencedName) ? referencedName : null;
+            if (successfulResponses.Any(response => response.Type is null)) returnType = AddNone(returnType);
         }
         else
         {
             returnType = new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true);
         }
 
-        var body = BuildMethodBody(op, isAsync, responseModelName, successResponse?.Type);
+        var body = BuildMethodBody(op, isAsync, responseModelName, successResponse?.Type, methodName);
 
         return new PythonFunctionDeclarationNode(
             new IdentifierNode(methodName),
             parameters,
-            returnType: WrapForwardRef(returnType, responseModelName != null && modelImports.ContainsKey(responseModelName)),
+            returnType: returnType,
             body: body,
             isAsync: isAsync,
             documentation: BuildOperationDocstring(op));
     }
 
-    private static TypeNode WrapForwardRef(TypeNode type, bool quote)
-    {
-        // Возвращаемый тип в годовых аннотациях всегда оборачивается в "" если ссылается на модель.
-        // Текущий рендерер для return type не делает quoting автоматически; полагаемся на
-        // `from __future__ import annotations` чтобы все аннотации стали строками.
-        return type;
-    }
-
+    /// <summary>Combines source documentation into a generated operation docstring.</summary>
+    /// <param name="op">The operation containing the source summary and description.</param>
+    /// <returns>The operation documentation, falling back to its HTTP method and path.</returns>
     private static CommentNode? BuildOperationDocstring(IrOperation op)
     {
         var sb = new StringBuilder();
@@ -226,45 +252,64 @@ public sealed class HttpxClientAstBuilder
         return new CommentNode(sb.ToString(), CommentKind.MultiLine);
     }
 
+    /// <summary>Builds HTTPX wire calls and validates successful typed response bodies.</summary>
+    /// <param name="op">The operation with source wire names and transport metadata.</param>
+    /// <param name="isAsync">Whether to await the HTTPX operation.</param>
+    /// <param name="responseModelName">The direct Pydantic response model name, if applicable.</param>
+    /// <param name="responseType">The typed successful response body.</param>
+    /// <param name="methodName">The generated method whose annotations provide container adapter types.</param>
+    /// <returns>The generated function body lines.</returns>
     private IReadOnlyList<string> BuildMethodBody(
         IrOperation op,
         bool isAsync,
         string? responseModelName,
-        IrType? responseType)
+        IrType? responseType,
+        string methodName)
     {
         var lines = new List<string>();
 
-        // Формируем URL: f"/path/{param}".
         var pathExpr = ToFStringPath(op.Path, op.PathParameters);
         var awaitKeyword = isAsync ? "await " : "";
         var httpMethod = op.HttpMethod.ToLowerInvariant();
         var requestArgs = new List<string> { pathExpr };
 
-        // Query params.
         if (op.QueryParameters.Count > 0)
         {
-            lines.Add("params: dict[str, Any] = {}");
+            lines.Add("params = {}");
             foreach (var p in op.QueryParameters)
             {
                 var pyName = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name));
                 if (p.IsRequired)
-                    lines.Add($"params[\"{p.Name}\"] = {pyName}");
+                    lines.Add($"params[{JsonSerializer.Serialize(p.OriginalName)}] = {pyName}");
                 else
-                    lines.Add($"if {pyName} is not None: params[\"{p.Name}\"] = {pyName}");
+                    lines.Add($"if {pyName} is not None: params[{JsonSerializer.Serialize(p.OriginalName)}] = {pyName}");
             }
             requestArgs.Add("params=params");
         }
 
-        // Request body.
+        if (op.HeaderParameters.Count > 0)
+        {
+            lines.Add("headers = {}");
+            foreach (var parameter in op.HeaderParameters)
+            {
+                var parameterName = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(parameter.Name));
+                var assignment = $"headers[{JsonSerializer.Serialize(parameter.OriginalName)}] = str({parameterName})";
+                lines.Add(parameter.IsRequired ? assignment : $"if {parameterName} is not None: {assignment}");
+            }
+            requestArgs.Add("headers=headers");
+        }
+
         if (op.RequestBody != null)
         {
             if (op.RequestBody.IsJson || (op.RequestBody.ContentType == null))
             {
-                // Для Pydantic-модели вызываем model_dump(by_alias=True).
-                if (IsPydanticModelRef(op.RequestBody.Type))
-                    requestArgs.Add("json=body.model_dump(by_alias=True, exclude_none=True)");
+                var bodyExpression = $"TypeAdapter(get_type_hints(self.{methodName})[\"body\"]).dump_python(body, mode=\"json\", by_alias=True, exclude_unset=True)";
+                if (op.RequestBody.IsRequired) requestArgs.Add($"json={bodyExpression}");
                 else
-                    requestArgs.Add("json=body");
+                {
+                    lines.Add($"body_args = {{\"json\": {bodyExpression}}} if body is not None else {{}}");
+                    requestArgs.Add("**body_args");
+                }
             }
             else if (op.RequestBody.IsFormUrlEncoded)
             {
@@ -283,12 +328,15 @@ public sealed class HttpxClientAstBuilder
         var argList = string.Join(", ", requestArgs);
         lines.Add($"response = {awaitKeyword}self._client.{httpMethod}({argList})");
         lines.Add("response.raise_for_status()");
+        lines.Add("if response.status_code in (204, 205) or response.request.method == \"HEAD\": return None");
 
         if (responseType != null)
         {
             if (responseModelName != null)
             {
-                lines.Add($"return {responseModelName}.model_validate(response.json())");
+                if (responseType is IrNullableType || responseType is IrOptionalType)
+                    lines.Add($"return None if response.json() is None else {responseModelName}.model_validate(response.json())");
+                else lines.Add($"return {responseModelName}.model_validate(response.json())");
             }
             else if (responseType is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void or IrPrimitiveKind.Null })
             {
@@ -300,7 +348,7 @@ public sealed class HttpxClientAstBuilder
             }
             else
             {
-                lines.Add("return response.json()");
+                lines.Add($"return TypeAdapter(get_type_hints(self.{methodName})[\"return\"]).validate_python(response.json())");
             }
         }
         else
@@ -310,14 +358,9 @@ public sealed class HttpxClientAstBuilder
         return lines;
     }
 
-    private static bool IsPydanticModelRef(IrType type) => type switch
-    {
-        IrModelReference => true,
-        IrNullableType n => IsPydanticModelRef(n.InnerType),
-        IrOptionalType o => IsPydanticModelRef(o.InnerType),
-        _ => false
-    };
-
+    /// <summary>Finds a direct declaration reference beneath presence wrappers.</summary>
+    /// <param name="type">The response type to inspect.</param>
+    /// <returns>The referenced generated declaration name, or null for container and primitive types.</returns>
     private static string? TryGetSimpleModelName(IrType type) => type switch
     {
         IrModelReference r => r.ModelName,
@@ -326,6 +369,9 @@ public sealed class HttpxClientAstBuilder
         _ => null
     };
 
+    /// <summary>Adds nullability without repeating an existing None union arm.</summary>
+    /// <param name="inner">The original type annotation.</param>
+    /// <returns>The annotation accepting both its original values and None.</returns>
     private static TypeNode AddNone(TypeNode inner)
     {
         if (inner is UnionTypeNode u && u.Types.Any(t => t is SimpleTypeNode s && s.Name.Name == "None"))
@@ -335,23 +381,33 @@ public sealed class HttpxClientAstBuilder
         return new UnionTypeNode(new[] { inner, (TypeNode)new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true) });
     }
 
+    /// <summary>Substitutes source path placeholders using safe generated parameter identifiers.</summary>
+    /// <param name="path">The source wire path template.</param>
+    /// <param name="pathParams">The operation's declared path parameters.</param>
+    /// <returns>A Python f-string expression with escaped textual parameter values.</returns>
     private string ToFStringPath(string path, IReadOnlyList<IrParameter> pathParams)
     {
-        // OpenAPI: "/users/{id}". Преобразуем имена к snake_case в выражении f-string.
         var result = path;
         foreach (var p in pathParams)
         {
             var snake = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name));
-            result = result.Replace("{" + p.Name + "}", "{" + snake + "}", StringComparison.Ordinal);
+            var value = IrTypeQueries.UnwrapNullableOptional(p.Type) is IrPrimitiveType
+                { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number }
+                ? snake : $"quote(str({snake}), safe='')";
+            result = result.Replace("{" + p.OriginalName + "}", "{" + value + "}", StringComparison.Ordinal);
         }
         return $"f\"{result}\"";
     }
 
-    private static void ScanForImports(
+    /// <summary>Collects runtime and standard-library imports needed by request and response annotations.</summary>
+    /// <param name="type">The schema type graph to traverse.</param>
+    /// <param name="modelImports">The generated declaration imports receiving discovered references.</param>
+    /// <param name="datetimeImports">The standard date and time imports.</param>
+    /// <param name="uuidNeeded">Whether UUID annotations require an import.</param>
+    /// <param name="anyNeeded">Whether unconstrained annotations require typing.Any.</param>
+    private void ScanForImports(
         IrType type,
         SortedDictionary<string, string> modelImports,
-        IReadOnlyDictionary<string, string> modelModuleByName,
-        IReadOnlyDictionary<string, string> enumModuleByName,
         SortedSet<string> datetimeImports,
         ref bool uuidNeeded,
         ref bool anyNeeded)
@@ -369,33 +425,34 @@ public sealed class HttpxClientAstBuilder
                 }
                 break;
             case IrModelReference r:
-                if (modelModuleByName.TryGetValue(r.ModelName, out var module))
+                if (PythonDeclarationImports.TryGetModulePath(DocumentContext, _namingConverter, r.ModelName, "..models.", out var module))
                     modelImports[r.ModelName] = module;
-                else if (enumModuleByName.TryGetValue(r.ModelName, out var enumModule))
-                    modelImports[r.ModelName] = enumModule;
                 break;
             case IrArrayType a:
-                ScanForImports(a.ElementType, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                ScanForImports(a.ElementType, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
             case IrDictionaryType d:
-                ScanForImports(d.KeyType, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
-                ScanForImports(d.ValueType, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                ScanForImports(d.KeyType, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                ScanForImports(d.ValueType, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
             case IrNullableType n:
-                ScanForImports(n.InnerType, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                ScanForImports(n.InnerType, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
             case IrOptionalType o:
-                ScanForImports(o.InnerType, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                ScanForImports(o.InnerType, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
             case IrUnionType u:
-                foreach (var t in u.Types) ScanForImports(t, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                foreach (var t in u.Types) ScanForImports(t, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
             case IrIntersectionType i:
-                foreach (var t in i.Types) ScanForImports(t, modelImports, modelModuleByName, enumModuleByName, datetimeImports, ref uuidNeeded, ref anyNeeded);
+                foreach (var t in i.Types) ScanForImports(t, modelImports, datetimeImports, ref uuidNeeded, ref anyNeeded);
                 break;
         }
     }
 
+    /// <summary>Converts a grouped client name into a Python API class identifier.</summary>
+    /// <param name="clientName">The source client group name.</param>
+    /// <returns>A PascalCase identifier ending in Api.</returns>
     private string ToClassName(string clientName)
     {
         var pascal = _namingConverter.ToPascalCase(clientName);

@@ -21,16 +21,19 @@ public sealed class ZodEnumNode : ZodSchemaNode
     public override IReadOnlyList<AstNode> Children => Values.Cast<AstNode>().ToImmutableList();
     
     /// <summary>
-    /// Конструктор
+    /// Creates an enumeration schema, including an empty enumeration represented as an impossible value.
     /// </summary>
+    /// <param name="values">The allowed enum values.</param>
+    /// <param name="type">The optional inferred expression type.</param>
+    /// <param name="metadata">Additional AST metadata.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> is null.</exception>
     public ZodEnumNode(
         IReadOnlyList<ZodEnumValueNode> values,
         TypeNode? type = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(ZodSchemaKind.Enum, type, metadata)
     {
-        if (values == null || values.Count == 0)
-            throw new ArgumentException("Enum must have at least one value", nameof(values));
+        ArgumentNullException.ThrowIfNull(values);
         
         Values = values.ToImmutableList();
     }

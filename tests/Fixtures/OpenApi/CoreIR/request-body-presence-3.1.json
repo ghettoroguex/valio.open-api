@@ -1,0 +1,86 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Request body presence independent of required fields",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/optional-omitted": {
+      "post": {
+        "operationId": "optionalOmitted",
+        "responses": {
+          "204": {
+            "description": "Accepted"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Payload"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/optional-explicit": {
+      "post": {
+        "operationId": "optionalExplicit",
+        "responses": {
+          "204": {
+            "description": "Accepted"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Payload"
+              }
+            }
+          },
+          "required": false
+        }
+      }
+    },
+    "/required": {
+      "post": {
+        "operationId": "requiredBody",
+        "responses": {
+          "204": {
+            "description": "Accepted"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Payload"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Payload": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

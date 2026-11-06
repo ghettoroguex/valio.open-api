@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
@@ -12,18 +13,30 @@ namespace ValIO.Generators.Kotlin.Ast.Builders;
 /// Builds a Kotlin <c>data class</c> + <c>@Serializable</c> for an IR model.
 /// Emits one <see cref="KotlinFileNode"/> per model.
 /// </summary>
-public sealed class KotlinDataClassAstBuilder
+public sealed class KotlinDataClassAstBuilder : AstBuilderBase
 {
+    /// <summary>Converts source property identifiers into Kotlin names.</summary>
     private readonly INamingConverter _namingConverter;
+
+    /// <summary>Maps shared schema types into Kotlin type annotations.</summary>
     private readonly KotlinIrTypeMapper _typeMapper;
 
-    public KotlinDataClassAstBuilder(INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
+    /// <summary>Initializes model generation with the document's shared declaration indexes.</summary>
+    /// <param name="documentContext">The finalized document context shared by the generation request.</param>
+    /// <param name="namingConverter">The converter for generated property identifiers.</param>
+    /// <param name="typeMapper">The mapper for Kotlin type annotations.</param>
+    public KotlinDataClassAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
+        : base(documentContext)
     {
         _namingConverter = namingConverter;
         _typeMapper = typeMapper;
     }
 
-    public KotlinFileNode BuildFile(IrModel model, string modelsPackage, IReadOnlySet<string> knownModelNames)
+    /// <summary>Builds a serializable data class with imports resolved against the shared document indexes.</summary>
+    /// <param name="model">The model whose inherited properties have already been resolved.</param>
+    /// <param name="modelsPackage">The Kotlin package containing all generated model declarations.</param>
+    /// <returns>The Kotlin file declaring the requested model.</returns>
+    public KotlinFileNode BuildFile(IrModel model, string modelsPackage)
     {
         var importScan = new KotlinTypeImportScanner.Result();
         var properties = new List<KotlinPropertyNode>(model.Properties.Count);
@@ -81,7 +94,7 @@ public sealed class KotlinDataClassAstBuilder
         {
             // modelName carries the affix and is matched against the affixed self/known names.
             if (string.Equals(modelName, model.Name, StringComparison.Ordinal)) continue;
-            if (!knownModelNames.Contains(modelName)) continue;
+            if (!DocumentContext.KnownTypeNames.Contains(modelName)) continue;
             // Kotlin imports resolve by fully-qualified CLASS name (package + affixed type name),
             // independent of the .kt file name — so the import uses the affixed identifier.
             imports.Add(new KotlinImportNode($"{modelsPackage}.{modelName}"));
@@ -101,9 +114,15 @@ public sealed class KotlinDataClassAstBuilder
             imports: imports);
     }
 
+    /// <summary>Adds optional-field nullability without duplicating an existing nullable annotation.</summary>
+    /// <param name="type">The original property annotation.</param>
+    /// <returns>The original nullable type or a new nullable wrapper.</returns>
     private static TypeNode EnsureNullable(TypeNode type) =>
         type is NullableTypeNode ? type : new NullableTypeNode(type);
 
+    /// <summary>Escapes source wire names for Kotlin string literal arguments.</summary>
+    /// <param name="s">The source wire name.</param>
+    /// <returns>The escaped string literal contents.</returns>
     private static string EscapeStringLiteral(string s) =>
         s.Replace("\\", "\\\\", StringComparison.Ordinal)
          .Replace("\"", "\\\"", StringComparison.Ordinal)

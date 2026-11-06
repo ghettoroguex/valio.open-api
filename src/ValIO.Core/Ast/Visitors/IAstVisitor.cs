@@ -17,10 +17,16 @@ public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
     // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
-    
+
     // Interface (общий для C# и TypeScript)
     TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
-    
+
+    // Универсальные декларации (промоучены из C#-генератора; используются C# и C++ std-профилем)
+    TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node);
+    TResult VisitClassDeclaration(ClassDeclarationNode node);
+    TResult VisitStructDeclaration(StructDeclarationNode node);
+    TResult VisitFieldDeclaration(FieldDeclarationNode node);
+
     // HTTP специфичные узлы
     TResult VisitHttpMethod(HttpMethodNode node);
     TResult VisitRoute(RouteNode node);

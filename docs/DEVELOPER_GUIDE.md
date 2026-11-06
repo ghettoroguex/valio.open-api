@@ -278,6 +278,30 @@ in `TypeScriptGeneratorPlugin.CreatePipeline`, add the transport id to `TypeScri
 + a descriptor choice + normaliser alias, and add tests + a docs/stack page. Reuse the shared
 `TypeScriptParamsAstBuilder` / `TypeScriptResultsAstBuilder` for params/results so names line up.
 
+### 10b-cpp. C++ runtime profiles (`ue` | `std`)
+
+The C++ plugin hosts two runtime profiles behind one option (`runtime`); pipeline steps
+self-gate on `context.PluginOptions` (`CppUe*Step` run when `Runtime != Std`, `CppStd*Step`
+when `Runtime == Std`), so the pipeline always contains both groups — the TS-transport pattern
+applied to profiles. Adding a third profile: extend `CppRuntimeProfile` + `CppOptionsDescriptor`,
+add a `Cpp<X>Step` group gated on the new value, and builders under `Ast/Builders/<X>/`.
+
+The **std profile** (cpp-httplib + nlohmann_json) keeps model headers JSON-free
+(`Models/*.h` are std-only; `Serializers/*Json.h/.cpp` own the wire names via ADL
+`to_json`/`from_json`; `<httplib.h>` lives in one TU — `Runtime/ValIOHttp.cpp`).
+Its canonical runtime files are raw-string templates in `Runtime/StdRuntimeTemplates.cs`
+(precedent: `CSharpClientStep`'s ApiException/multipart factory) emitted once per project
+by `CppStdRuntimeStep`. Compile-verified against exact pins cpp-httplib v0.18.3 +
+nlohmann_json v3.12.0 on C++17/20/23 by `tests/ValIO.Generators.Cpp.CompileTests`
+(cmake required; `Assert.Ignore` when absent; CI job `cpp-compile-fixture`).
+
+Universal declaration nodes live in Core AST (`NamespaceDeclarationNode`,
+`ClassDeclarationNode`, `StructDeclarationNode`, `FieldDeclarationNode` — promoted from
+the C# generator; `EnumDeclarationNode.UnderlyingType`, `EnumMemberDeclarationNode.WireValue`,
+`MethodDeclarationNode.IsStatic/IsVirtual/IsAbstract/IsConst/Noexcept`). New languages must
+reuse them instead of duplicating per-language copies; remaining per-language duplicates
+(Java/Kotlin/etc. class nodes) are documented backlog.
+
 ### 10c. Add a new validation library
 
 Mirror `Zod` / `Valibot` / `TypeBox`: a schema builder + a source-file builder + a step gated on

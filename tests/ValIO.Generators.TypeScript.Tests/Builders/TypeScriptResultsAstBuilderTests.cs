@@ -1,3 +1,4 @@
+using ValIO.Generators.TypeScript.Tests.TestHelpers;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Ast.Nodes;
@@ -21,7 +22,7 @@ public class TypeScriptResultsAstBuilderTests
     public void Setup()
     {
         var mapper = new TypeScriptIrTypeMapper();
-        _sut = new TypeScriptResultsAstBuilder(_namingConverter, mapper.MapType);
+        _sut = new TypeScriptResultsAstBuilder(IrDocumentContexts.Create(), _namingConverter, mapper.MapType);
     }
 
     private static IrOperation Op(string methodName, IReadOnlyList<IrResponse> responses) => new()
@@ -75,7 +76,7 @@ public class TypeScriptResultsAstBuilderTests
     [Test]
     public void CustomSuffix_RenamesUnionAliasOnly()
     {
-        var sut = new TypeScriptResultsAstBuilder(_namingConverter, new TypeScriptIrTypeMapper().MapType, resultSuffix: "Response");
+        var sut = new TypeScriptResultsAstBuilder(IrDocumentContexts.Create(), _namingConverter, new TypeScriptIrTypeMapper().MapType, resultSuffix: "Response");
         var op = Op("getOne", responses:
         [
             new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "User" } },

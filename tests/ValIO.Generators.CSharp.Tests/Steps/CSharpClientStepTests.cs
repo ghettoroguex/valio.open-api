@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
 using ValIO.Generators.CSharp.Ast.Renderers;
@@ -89,5 +90,41 @@ public class CSharpClientStepTests
         await _step.ExecuteAsync(context);
 
         context.GeneratedFiles.Should().NotContain(f => f.Content.Contains("class ApiException"));
+    }
+
+    /// <summary>
+    /// Verifies that multipart support is emitted once and only when a generated operation requires it.
+    /// </summary>
+    [Test]
+    public async Task MultipartClient_EmitsInvariantContentFactoryExactlyOnce()
+    {
+        var multipartOperation = MinimalClient("Logos").Operations[0] with
+        {
+            HttpMethod = "POST",
+            RequestBody = new IrRequestBody
+            {
+                Type = new IrModelReference { ModelName = "ReplaceLogoForm" },
+                IsRequired = true,
+                ContentType = "multipart/form-data",
+            },
+        };
+        var client = MinimalClient("Logos") with { Operations = [multipartOperation] };
+        var context = new GenerationContext
+        {
+            IrDocument = DocumentWithClients(client),
+            Configuration = new GenerationConfiguration { Namespace = "Test.Ns" },
+        };
+
+        await _step.ExecuteAsync(context);
+
+        var helpers = context.GeneratedFiles
+            .Where(file => file.RelativePath == "Api/MultipartFormDataContentFactory.cs")
+            .ToList();
+        helpers.Should().ContainSingle();
+        helpers[0].Content.Should().Contain("namespace Test.Ns;");
+        helpers[0].Content.Should().Contain("case byte[] bytes:");
+        context.GeneratedFiles.Single(file => file.RelativePath == "Api/HttpWireValueFormatter.cs")
+            .Content.Should().Contain("bool boolean => boolean ? \"true\" : \"false\"");
+        context.GeneratedFiles.Single(file => file.RelativePath == "Api/HttpWireValueFormatter.cs").Content.Should().Contain("DateTimeOffset dateTimeOffset => dateTimeOffset.ToString(\"O\"");
     }
 }

@@ -1,0 +1,125 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Primitive format retention",
+    "version": "1.0.0"
+  },
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/temporal": {
+      "post": {
+        "operationId": "temporalValue",
+        "responses": {
+          "200": {
+            "description": "Temporal value",
+            "schema": {
+              "type": "string",
+              "format": "TIME"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "Duration"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "type": "string",
+            "format": "TIME",
+            "required": false
+          }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "Formats": {
+      "type": "object",
+      "required": [
+        "time",
+        "duration"
+      ],
+      "properties": {
+        "plain": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string",
+          "format": " DATE "
+        },
+        "dateTime": {
+          "type": "string",
+          "format": "DATE-TIME"
+        },
+        "time": {
+          "type": "string",
+          "format": " Time "
+        },
+        "timeEquivalent": {
+          "type": "string",
+          "format": "time"
+        },
+        "duration": {
+          "type": "string",
+          "format": " Duration "
+        },
+        "timeSpan": {
+          "type": "string",
+          "format": " Time-Span "
+        },
+        "timespan": {
+          "type": "string",
+          "format": "TIMESPAN"
+        },
+        "uuid": {
+          "type": "string",
+          "format": " UUID "
+        },
+        "wideInteger": {
+          "type": "integer",
+          "format": " INT64 "
+        },
+        "customUpper": {
+          "type": "string",
+          "format": "Acme-Token"
+        },
+        "customLower": {
+          "type": "string",
+          "format": "acme-token"
+        },
+        "nullableDuration": {
+          "type": "string",
+          "format": "Duration",
+          "x-nullable": true
+        },
+        "durationArray": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "duration"
+          }
+        },
+        "nullableTimeValues": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "TIME",
+            "x-nullable": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "openapi": "3.1.2",
+  "info": { "title": "Python generated runtime", "version": "1.0.0" },
+  "paths": {
+    "/records/{record-id}": {
+      "get": {
+        "tags": ["records"], "operationId": "getRecord",
+        "parameters": [
+          { "name": "record-id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "Paging.Limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "X-Request-Id", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } } }
+      }
+    },
+    "/records": {
+      "get": { "tags": ["records"], "operationId": "listRecords", "responses": { "200": { "description": "Records", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Envelope" } } } } } } },
+      "post": { "tags": ["records"], "operationId": "saveRecord", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }, "responses": { "200": { "description": "Saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } } } }
+    },
+    "/empty": { "get": { "tags": ["records"], "operationId": "empty", "responses": { "204": { "description": "No body" } } } },
+    "/error": { "get": { "tags": ["records"], "operationId": "error", "responses": { "200": { "description": "Record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }, "503": { "description": "Non JSON service error" } } } },
+    "/mixed": { "get": { "tags": ["records"], "operationId": "mixed", "responses": { "204": { "description": "No body" }, "200": { "description": "Record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } } } } },
+    "/wait": { "get": { "tags": ["records"], "operationId": "wait", "responses": { "200": { "description": "Record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } } } } },
+    "/unauthorized": { "get": { "tags": ["records"], "operationId": "unauthorized", "responses": { "200": { "description": "Record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }, "401": { "description": "Not authorized" } } } },
+    "/optional-body": { "post": { "tags": ["records"], "operationId": "optionalBody", "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }, "responses": { "204": { "description": "No body" } } } }
+  },
+  "components": {
+    "schemas": {
+      "Status": { "type": "string", "enum": ["ready", "paused"] },
+      "Child": {
+        "type": "object", "required": ["display-name", "score"],
+        "properties": { "display-name": { "type": "string", "minLength": 2, "maxLength": 10, "pattern": "^[A-Za-z]+$" }, "score": { "type": "number", "minimum": 0.5, "exclusiveMaximum": 10.5 } }
+      },
+      "Envelope": {
+        "type": "object", "required": ["status", "children", "requiredNullable", "byName"],
+        "properties": {
+          "status": { "$ref": "#/components/schemas/Status" },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/Child" } },
+          "byName": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/Child" } },
+          "requiredNullable": { "type": ["string", "null"] },
+          "optionalNonNull": { "type": "string" },
+          "optionalNullable": { "type": ["string", "null"] },
+          "cycle": { "$ref": "#/components/schemas/NodeA" }
+        }
+      },
+      "NodeA": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "next": { "$ref": "#/components/schemas/NodeB" } } },
+      "NodeB": { "type": "object", "required": ["value"], "properties": { "value": { "type": "integer" }, "next": { "$ref": "#/components/schemas/NodeA" } } }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -17,27 +18,25 @@ namespace ValIO.Generators.TypeScript.Solid.Ast.Builders;
 /// <c>$server</c>-transform compiles the file into an RPC handler on the server
 /// and a typed RPC client on the browser.
 /// </summary>
-public sealed class SolidStartClientAstBuilder
+public sealed class SolidStartClientAstBuilder : AstBuilderBase
 {
     private readonly TypeScriptAstBuilder _innerBuilder;
     private readonly INamingConverter _namingConverter;
 
-    public SolidStartClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    /// <summary>Creates a SolidStartClientAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public SolidStartClientAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+        : base(documentContext)
     {
         ArgumentNullException.ThrowIfNull(namingConverter);
         _namingConverter = namingConverter;
-        _innerBuilder = new TypeScriptAstBuilder(namingConverter, options);
+        _innerBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
     }
 
-    /// <summary>
-    /// Models from the active IR document, keyed by generated name. The delegated fetch builder needs these to
-    /// materialize multipart form fields instead of passing the request model object through unchanged.
-    /// </summary>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName
-    {
-        get => _innerBuilder.ModelsByName;
-        set => _innerBuilder.ModelsByName = value;
-    }
 
     /// <summary>
     /// Build a <see cref="SourceFileNode"/> whose body is a fetch-based async function

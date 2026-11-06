@@ -41,21 +41,23 @@ public static class IrCompositionNormalizer
     }
 
     /// <summary>
-    /// Нормализует oneOf/anyOf-композицию в union.
-    /// 0 элементов → <see cref="IrPrimitiveKind.Any"/>; 1 элемент → сам элемент; ≥2 → <see cref="IrUnionType"/>.
+    /// Normalizes alternatives while preserving exclusive match counts and nested exclusive boundaries.
     /// </summary>
-    /// <param name="members">Уже построенные IR-типы вариантов oneOf/anyOf (без чистых null-веток).</param>
-    /// <param name="nullable">Допускает ли схема JSON null.</param>
-    public static IrType NormalizeUnion(IReadOnlyList<IrType> members, bool nullable = false)
+    /// <param name="members">Built alternative types; oneOf retains duplicate and null-only alternatives.</param>
+    /// <param name="nullable">Whether the containing schema independently permits JSON null.</param>
+    /// <param name="kind">The inclusive or exclusive matching rule.</param>
+    /// <returns>A normalized type without removing alternatives that affect exclusive matching.</returns>
+    public static IrType NormalizeUnion(IReadOnlyList<IrType> members, bool nullable = false, IrUnionKind kind = IrUnionKind.AnyOf)
     {
-        var flattened = Flatten(members, intersection: false);
-        var distinct = Distinct(flattened);
+        var distinct = kind == IrUnionKind.OneOf
+            ? members.ToList()
+            : Distinct(Flatten(members, intersection: false));
 
         IrType core = distinct.Count switch
         {
             0 => new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any },
             1 => distinct[0],
-            _ => new IrUnionType { Types = distinct }
+            _ => new IrUnionType { Types = distinct, Kind = kind }
         };
 
         return (nullable || core is IrNullableType) ? WrapNullable(core) : core;
@@ -78,10 +80,10 @@ public static class IrCompositionNormalizer
         {
             switch (member)
             {
-                case IrIntersectionType i when intersection:
+                case IrIntersectionType { Constraints: null } i when intersection:
                     result.AddRange(Flatten(i.Types, intersection));
                     break;
-                case IrUnionType u when !intersection:
+                case IrUnionType { Kind: IrUnionKind.AnyOf, Constraints: null } u when !intersection:
                     result.AddRange(Flatten(u.Types, intersection));
                     break;
                 default:
@@ -94,9 +96,10 @@ public static class IrCompositionNormalizer
     }
 
     /// <summary>
-    /// Удаляет семантические дубликаты членов (одинаковые <c>$ref</c>/примитивы),
-    /// сохраняя порядок первого вхождения.
+    /// Removes equivalent inclusive/intersection members while preserving first-seen order and presence.
     /// </summary>
+    /// <param name="members">The flattened composition members.</param>
+    /// <returns>Members without structurally equivalent duplicates.</returns>
     private static List<IrType> Distinct(IReadOnlyList<IrType> members)
     {
         var result = new List<IrType>(members.Count);
@@ -105,7 +108,7 @@ public static class IrCompositionNormalizer
             var duplicate = false;
             foreach (var existing in result)
             {
-                if (IrTypeComparer.AreSemanticallyEqual(existing, member))
+                if (IrTypeComparer.AreSemanticallyEqual(existing, member, ignorePresence: false))
                 {
                     duplicate = true;
                     break;

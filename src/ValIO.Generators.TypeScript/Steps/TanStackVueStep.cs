@@ -44,8 +44,8 @@ public sealed class TanStackVueStep : ICodeGenerationStep
         var clientsPath = fileOrg.ClientsPath ?? "api";
         var clientSuffix = TypeScriptClientTransport.ResolveHookClientSuffix(opts);
 
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var hookBuilder = new TanStackVueQueryHookAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
+        var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
+        var hookBuilder = new TanStackVueQueryHookAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
 
         foreach (var client in context.IrDocument.Clients)
         {

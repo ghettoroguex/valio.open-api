@@ -18,6 +18,8 @@
     <ProjectReference Include="..\..\src\ValIO.Application\ValIO.Application.csproj" />
     <ProjectReference Include="..\..\src\ValIO.Output\ValIO.Output.csproj" />
     <ProjectReference Include="..\..\src\ValIO.Core\ValIO.Core.csproj" />
+    <ProjectReference Include="..\..\src\ValIO.Parsers\ValIO.Parsers.csproj" />
+    <ProjectReference Include="..\..\src\ValIO.Plugins.Bootstrap\ValIO.Plugins.Bootstrap.csproj" />
   </ItemGroup>
 
 </Project>

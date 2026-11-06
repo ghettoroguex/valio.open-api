@@ -20,19 +20,30 @@ namespace ValIO.Generators.CSharp.Tests.Builders;
 [TestFixture]
 public class CSharpAstBuilderQueryParametersTests
 {
+    /// <summary>Builds HTTP operation syntax for the query regression cases.</summary>
     private CSharpAstBuilder _builder = null!;
+    /// <summary>Renders the syntax used by query source assertions.</summary>
     private CSharpAstRenderer _renderer = null!;
 
+    /// <summary>Creates fresh builder and renderer instances.</summary>
     [SetUp]
     public void Setup()
     {
-        _builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        _builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         _renderer = new CSharpAstRenderer();
     }
 
+    /// <summary>Creates a parameter retaining its wire name.</summary>
+    /// <param name="name">The source and wire name.</param>
+    /// <param name="type">The normalized parameter type.</param>
+    /// <param name="isRequired">Whether the parameter must be supplied.</param>
+    /// <returns>The parameter metadata.</returns>
     private static IrParameter Param(string name, IrType type, bool isRequired) =>
         new() { Name = name, Type = type, IsRequired = isRequired };
 
+    /// <summary>Creates a GET operation with the specified query arguments.</summary>
+    /// <param name="queryParams">The query parameters in source order.</param>
+    /// <returns>The operation metadata.</returns>
     private static IrOperation Operation(params IrParameter[] queryParams) => new()
     {
         MethodName = "GetItems",
@@ -44,9 +55,14 @@ public class CSharpAstBuilderQueryParametersTests
         Responses = [new IrResponse { StatusCode = "200" }],
     };
 
+    /// <summary>Gets the string scalar used in query cases.</summary>
+    /// <value>The normalized string type.</value>
     private static IrPrimitiveType StringType => new() { PrimitiveKind = IrPrimitiveKind.String };
+    /// <summary>Gets the UUID scalar used in query cases.</summary>
+    /// <value>The normalized UUID type.</value>
     private static IrPrimitiveType UuidType => new() { PrimitiveKind = IrPrimitiveKind.Uuid };
 
+    /// <summary>Verifies optionalscalarqueryparam isguardedbynullcheck.</summary>
     [Test]
     public void OptionalScalarQueryParam_IsGuardedByNullCheck()
     {
@@ -54,9 +70,10 @@ public class CSharpAstBuilderQueryParametersTests
         var code = _renderer.Render(_builder.BuildMethod(op));
 
         code.Should().Contain("if (search != null)");
-        code.Should().Contain("queryParts.Add(\"search=\" + Uri.EscapeDataString(search))");
+        code.Should().Contain("queryParts.Add(\"search=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(search)))");
     }
 
+    /// <summary>Verifies requiredscalarqueryparam isaddedunconditionally.</summary>
     [Test]
     public void RequiredScalarQueryParam_IsAddedUnconditionally()
     {
@@ -64,9 +81,10 @@ public class CSharpAstBuilderQueryParametersTests
         var code = _renderer.Render(_builder.BuildMethod(op));
 
         code.Should().NotContain("if (id != null)");
-        code.Should().Contain("queryParts.Add(\"id=\" + id.ToString())");
+        code.Should().Contain("queryParts.Add(\"id=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(id)))");
     }
 
+    /// <summary>Verifies arrayqueryparam expandstorepeatedkeyvaluepairs.</summary>
     [Test]
     public void ArrayQueryParam_ExpandsToRepeatedKeyValuePairs()
     {
@@ -76,9 +94,10 @@ public class CSharpAstBuilderQueryParametersTests
 
         code.Should().Contain("if (projectIds != null)");
         code.Should().Contain("foreach (var item in projectIds)");
-        code.Should().Contain("queryParts.Add(\"projectIds=\" + item.ToString())");
+        code.Should().Contain("queryParts.Add(\"projectIds=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(item)))");
     }
 
+    /// <summary>Verifies arrayofstrings escapeseachitem.</summary>
     [Test]
     public void ArrayOfStrings_EscapesEachItem()
     {
@@ -87,11 +106,12 @@ public class CSharpAstBuilderQueryParametersTests
         var code = _renderer.Render(_builder.BuildMethod(op));
 
         code.Should().Contain("foreach (var item in tags)");
-        code.Should().Contain("queryParts.Add(\"tags=\" + Uri.EscapeDataString(item))");
+        code.Should().Contain("queryParts.Add(\"tags=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(item)))");
         // Required array — no outer null guard.
         code.Should().NotContain("if (tags != null)");
     }
 
+    /// <summary>Verifies queryparts onlyappendedtourlwhennonempty.</summary>
     [Test]
     public void QueryParts_OnlyAppendedToUrlWhenNonEmpty()
     {
@@ -103,6 +123,7 @@ public class CSharpAstBuilderQueryParametersTests
         code.Should().Contain("urlBuilder.Append(string.Join(\"&\", queryParts))");
     }
 
+    /// <summary>Verifies noqueryparameters doesnotemitquerypartsscaffolding.</summary>
     [Test]
     public void NoQueryParameters_DoesNotEmitQueryPartsScaffolding()
     {
@@ -112,6 +133,7 @@ public class CSharpAstBuilderQueryParametersTests
         code.Should().NotContain("queryParts");
     }
 
+    /// <summary>Verifies queryparamwithdottedwirename usesoriginalnameasurlkeybutsanitizedidentifier.</summary>
     [Test]
     public void QueryParamWithDottedWireName_UsesOriginalNameAsUrlKeyButSanitizedIdentifier()
     {
@@ -129,11 +151,12 @@ public class CSharpAstBuilderQueryParametersTests
         var code = _renderer.Render(_builder.BuildMethod(op));
 
         // Ключ в URL — исходное «проводное» имя (с точкой)…
-        code.Should().Contain("queryParts.Add(\"Paging.Offset=\" + Paging_Offset.ToString())");
+        code.Should().Contain("queryParts.Add(\"Paging.Offset=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(Paging_Offset)))");
         // …а НЕ sanitized-идентификатор с подчёркиванием.
         code.Should().NotContain("\"Paging_Offset=\"");
     }
 
+    /// <summary>Verifies queryparam withoutexplicitoriginalname fallsbacktoname.</summary>
     [Test]
     public void QueryParam_WithoutExplicitOriginalName_FallsBackToName()
     {
@@ -141,6 +164,6 @@ public class CSharpAstBuilderQueryParametersTests
         var op = Operation(Param("countryId", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }, isRequired: false));
         var code = _renderer.Render(_builder.BuildMethod(op));
 
-        code.Should().Contain("queryParts.Add(\"countryId=\" + countryId.ToString())");
+        code.Should().Contain("queryParts.Add(\"countryId=\" + Uri.EscapeDataString(HttpWireValueFormatter.Format(countryId)))");
     }
 }

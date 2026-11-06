@@ -1,0 +1,26 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "collapsed-allof-bounds.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "ConstraintContainer": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "maximum": 10,
+            "allOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

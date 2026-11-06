@@ -1,0 +1,31 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "OpenAPI parameter serialization", "version": "1.0.0" },
+  "paths": {
+    "/items/{pathDefault}/{pathLabel}/{pathMatrix}": {
+      "get": {
+        "operationId": "getItems",
+        "parameters": [
+          { "name": "pathDefault", "in": "path", "required": true, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "pathLabel", "in": "path", "required": true, "style": "label", "explode": true, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "pathMatrix", "in": "path", "required": true, "style": "matrix", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "queryDefault", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "queryForm", "in": "query", "style": "form", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "queryCsv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "querySpaces", "in": "query", "style": "spaceDelimited", "explode": false, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "queryPipes", "in": "query", "style": "pipeDelimited", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "queryObject", "in": "query", "style": "deepObject", "explode": true, "schema": { "type": "object", "properties": { "name": { "type": "string" } } } },
+          { "name": "headerDefault", "in": "header", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "headerExploded", "in": "header", "style": "simple", "explode": true, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "$ref": "#/components/parameters/ReferencedQuery" }
+        ],
+        "responses": { "204": { "description": "No content" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ReferencedQuery": { "name": "queryReference", "in": "query", "style": "pipeDelimited", "explode": false, "schema": { "type": "array", "items": { "type": "string" } } }
+    }
+  }
+}

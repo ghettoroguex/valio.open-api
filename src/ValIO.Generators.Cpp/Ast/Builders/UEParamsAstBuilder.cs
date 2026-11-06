@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -11,29 +12,39 @@ using ValIO.Generators.Cpp.Services;
 
 namespace ValIO.Generators.Cpp.Ast.Builders;
 
-/// <summary>
-/// Строитель AST для Params-структур из IrOperation.
-/// Создаёт контейнеры параметров с подструктурами Route/Query/Body/Form.
-/// Если у операции только одна группа параметров — структура упрощается (без вложенности).
-/// </summary>
-public sealed class UEParamsAstBuilder
+/// <summary>Builds Unreal parameter headers with shared document declaration indexes.</summary>
+public sealed class UEParamsAstBuilder : AstBuilderBase
 {
+    /// <summary>Maps types using the shared document context.</summary>
     private readonly UETypeMapper _typeMapper;
+    /// <summary>Supplies Unreal identifier and path naming.</summary>
     private readonly UENamingConvention _naming;
+    /// <summary>Supplies the selected Unreal generation options.</summary>
     private readonly CppGenerationOptions _options;
 
-    public UEParamsAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options)
+    /// <summary>Requires one document context shared with the type mapper.</summary>
+    /// <param name="typeMapper">The document-aware Unreal type mapper.</param>
+    /// <param name="naming">The Unreal identifier and file naming rules.</param>
+    /// <param name="options">The Unreal generation options.</param>
+    /// <param name="documentContext">The mandatory finalized document indexes.</param>
+    /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+    /// <exception cref="ArgumentException">The mapper belongs to a different document context.</exception>
+    public UEParamsAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options, IrDocumentContext documentContext) : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        if (!ReferenceEquals(typeMapper.DocumentContext, documentContext))
+            throw new ArgumentException("The mapper and builder must share a document context.", nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
-    /// <summary>
-    /// Строит CppHeaderFileNode с Params-структурами для операции
-    /// </summary>
-    public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
+    /// <summary>Builds the operation header using this document's enum references.</summary>
+    /// <param name="operation">The operation contract to emit.</param>
+    /// <param name="clientName">The owning client's generated name.</param>
+    /// <returns>The generated Unreal header AST.</returns>
+    public CppHeaderFileNode Build(IrOperation operation, string clientName)
     {
+        var enumNames = EnumNames;
         var paramsName = _naming.ParamsStructName(operation.MethodName);
         // File name uses the ORIGINAL (pre-affix) method name so the emitted file/include doesn't change with affixes.
         var fileName = _naming.ParamsFileName(operation.OriginalMethodName);
@@ -264,7 +275,7 @@ public sealed class UEParamsAstBuilder
         var type = _typeMapper.MapType(param.Type);
         var defaultValueStr = _typeMapper.GetDefaultValue(param.Type);
         ExpressionNode? defaultValue = defaultValueStr != null
-            ? new LiteralExpressionNode(defaultValueStr, LiteralKind.String)
+            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
             : null;
 
         return new UPropertyFieldNode(
@@ -309,38 +320,11 @@ public sealed class UEParamsAstBuilder
         }
     }
 
-    /// <summary>
-    /// Рекурсивно собирает ссылки на модели и enum'ы из IrType
-    /// </summary>
+    /// <summary>Uses the shared C++ reference traversal for nested type wrappers.</summary>
+    /// <param name="type">The type whose declaration references are collected.</param>
+    /// <param name="models">The destination for model reference names.</param>
+    /// <param name="enums">The destination for enum reference names.</param>
+    /// <param name="enumNames">The shared document enum names used for classification.</param>
     private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                if (enumNames.Contains(modelRef.ModelName))
-                    enums.Add(modelRef.ModelName);
-                else
-                    models.Add(modelRef.ModelName);
-                break;
-            case IrArrayType array:
-                CollectTypeReferences(array.ElementType, models, enums, enumNames);
-                break;
-            case IrDictionaryType dict:
-                CollectTypeReferences(dict.KeyType, models, enums, enumNames);
-                CollectTypeReferences(dict.ValueType, models, enums, enumNames);
-                break;
-            case IrNullableType nullable:
-                CollectTypeReferences(nullable.InnerType, models, enums, enumNames);
-                break;
-            case IrOptionalType optional:
-                CollectTypeReferences(optional.InnerType, models, enums, enumNames);
-                break;
-            case IrUnionType union:
-                foreach (var t in union.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-        }
-    }
+        => CppTypeReferenceCollector.Collect(type, models, enums, enumNames);
 }

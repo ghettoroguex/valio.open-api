@@ -27,15 +27,8 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Построитель AST для TypeScript (Builder Pattern)
 /// Использует IR для построения AST узлов
 /// </summary>
-public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
+public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilder
 {
-    /// <summary>
-    /// Справочник моделей документа (по <see cref="IrModel.Name"/>). Нужен для резолва наследования
-    /// allOf в <see cref="BuildInterface"/>: интерфейс с <c>extends Base</c> не должен переобъявлять
-    /// свойства, унаследованные от базовых классов (иначе «incorrectly extends», TS2430). Устанавливается
-    /// шагом моделей; по умолчанию пуст — фильтрация не применяется (безопасный фолбэк).
-    /// </summary>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
 
     /// <summary>
     /// Identifies the kind of generated file an import is being built for. Drives both the base
@@ -57,11 +50,6 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private readonly HttpAstBuilder _httpBuilder;
     private readonly TypeScriptGenerationOptions? _options;
 
-    /// <summary>
-    /// Карта «affix-имя → исходное имя» для путей/имён файлов. Заполняется при входе в публичные
-    /// Build*-методы из <c>Original*</c>-полей IR. Пустая (тождество) при отсутствии affix.
-    /// </summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Стратегия валидации для выбранной библиотеки (zod/valibot/typebox/none). Строит выражения
@@ -69,19 +57,15 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     private readonly IClientValidationStrategy _validation;
 
-    /// <summary>
-    /// Транспорт генерируемого endpoint-файла (axios / fetch). Устанавливается в <see cref="BuildSourceFileForOperation"/>.
-    /// </summary>
-    private string _activeEndpointTransport = "axios";
-
-    /// <summary>
-    /// Конструктор
-    /// </summary>
-    /// <param name="namingConverter">Конвертер имен</param>
-    /// <param name="options">Опции генерации TypeScript (опционально)</param>
-    public TypeScriptAstBuilder(
+    /// <summary>Creates a TypeScriptAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TypeScriptAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         TypeScriptGenerationOptions? options = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _options = options;
@@ -98,6 +82,14 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
     // Приватные вспомогательные методы
     
+    /// <summary>Builds dependency imports using independent type and operation source-name scopes.</summary>
+    /// <param name="dependencies">The referenced generated type names.</param>
+    /// <param name="importPath">An optional import directory override.</param>
+    /// <param name="fileOrganization">The generated source layout.</param>
+    /// <param name="currentFileCategory">The kind of importing source file.</param>
+    /// <param name="currentModelOrEnumName">The generated declaration being built.</param>
+    /// <param name="currentOperationName">The original operation name used for its source directory.</param>
+    /// <returns>The imports required by the declaration.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IReadOnlyList<string> dependencies, 
         string? importPath,
@@ -118,7 +110,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var currentBasePath = !string.IsNullOrEmpty(currentModelOrEnumName)
             ? $"{modelsPath}/{GetModelFileName(currentModelOrEnumName)}"
             : !string.IsNullOrEmpty(currentOperationName)
-                ? $"{clientsPath}/{GetModelFileName(currentOperationName)}"
+            ? $"{clientsPath}/{_namingConverter.ToCamelCase(currentOperationName)}"
                 : currentFileCategory switch
                 {
                     FileCategory.Models => modelsPath,
@@ -266,16 +258,16 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Получает имя файла для модели или enum'а
+    /// Resolves a model or enum file name through the shared document declaration indexes.
     /// </summary>
+    /// <param name="typeName">The generated declaration identifier.</param>
+    /// <returns>The source-derived file basename.</returns>
     private string GetModelFileName(string typeName)
     {
         if (string.IsNullOrEmpty(typeName))
             return string.Empty;
 
-        // Имя файла строится от ИСХОДНОГО (до affix) имени, чтобы пути не менялись;
-        // при отсутствии affix карта тождественна.
-        var original = _orig.GetValueOrDefault(typeName, typeName);
+        var original = OriginalNameMap.GetTypeOriginalName(DocumentContext, typeName);
         return _namingConverter.ToCamelCase(original);
     }
     
@@ -318,37 +310,20 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Nullish в смысле OpenAPI/IR: ключ может отсутствовать, значение — <c>null</c> или тип допускает JSON-null.
+    /// Builds a source file preserving object, union, and sibling-property model semantics.
     /// </summary>
-    private static bool IsIrModelPropertyNullish(IrProperty property) =>
-        !property.IsRequired || property.Type is IrNullableType;
-    
-    /// <summary>
-    /// Тип поля интерфейса-модели: при nullish/optional — <c>(T | null) | undefined</c> и <c>?</c> в рендерере; иначе строго <c>T</c>.
-    /// </summary>
-    private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
-    {
-        if (!IsIrModelPropertyNullish(property))
-            return BuildType(property.Type);
-        
-        var irCore = property.Type is IrNullableType n ? n.InnerType : property.Type;
-        var valueCore = BuildType(irCore);
-        var withNull = new NullableTypeNode(valueCore);
-        var undefinedType = new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true);
-        return new UnionTypeNode(ImmutableList.Create<TypeNode>(withNull, undefinedType));
-    }
-    
-    /// <summary>
-    /// Строит SourceFile из IrModel
-    /// </summary>
+    /// <param name="model">The source IR model.</param>
+    /// <param name="importPath">The optional import path override.</param>
+    /// <param name="fileOrganization">The generated model layout settings.</param>
+    /// <returns>The model declaration and its dependencies.</returns>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        OriginalNameMap.AddModel(_orig, model);
+
         var dependencies = ExtractDependencies(model);
         dependencies = dependencies.Where(d => d != model.Name).ToList();
         var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models, model.Name);
         
-        var declarations = new List<DeclarationNode> { BuildInterface(model) };
+        var declarations = new List<DeclarationNode> { BuildModelDeclaration(model) };
         var constraintsDecl = BuildConstraintsDeclaration(model);
         if (constraintsDecl != null)
             declarations.Add(constraintsDecl);
@@ -364,6 +339,26 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 $"{modelFileBase}.ts",
                 $"models/{modelFileBase}",
                 string.IsNullOrWhiteSpace(model.Description) ? $"{model.Name} model." : model.Description));
+    }
+
+    /// <summary>Builds union models as aliases, intersecting sibling properties rather than discarding alternatives.</summary>
+    /// <param name="model">The source model.</param>
+    /// <returns>The interface or composed model type alias.</returns>
+    private DeclarationNode BuildModelDeclaration(IrModel model)
+    {
+        if (model.Composition is not { Kind: IrCompositionKind.OneOf or IrCompositionKind.AnyOf } composition)
+            return BuildInterface(model);
+
+        TypeNode valueType = BuildUnionType(new IrUnionType { Types = composition.Types });
+        if (model.Properties.Count > 0)
+        {
+            var ownShape = new TypeLiteralNode(model.Properties.Select(property =>
+                new TypeLiteralMember(property.Name, BuildType(property.Type), isOptional: !property.IsRequired)).ToImmutableList());
+            valueType = new IntersectionTypeNode(ImmutableList.Create(valueType, (TypeNode)ownShape));
+        }
+
+        return new TypeAliasDeclarationNode(new IdentifierNode(model.Name), valueType,
+            string.IsNullOrWhiteSpace(model.Description) ? null : new CommentNode(model.Description, CommentKind.JSDoc));
     }
 
     /// <summary>
@@ -419,13 +414,14 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит PropertyDeclarationNode из IrProperty.
-    /// Интерфейсы-модели и Zod: nullish (<c>?</c>, <c>T | null | undefined</c>, <c>.nullish()</c>) только если свойство не в <c>required</c> и/или тип <see cref="IrNullableType"/>.
+    /// Builds a model property, preserving required presence independently from nullable or optional value types.
     /// </summary>
+    /// <param name="property">The source IR property.</param>
+    /// <returns>The property declaration with the original presence and value constraints.</returns>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
-        var type = BuildInterfacePropertyTypeNode(property);
+        var type = BuildType(property.Type);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
@@ -450,7 +446,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        OriginalNameMap.AddEnum(_orig, enumModel);
+
         var imports = BuildImports(Array.Empty<string>(), importPath, fileOrganization, FileCategory.Models, enumModel.Name);
         var declarations = BuildEnumDeclaration(enumModel);
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
@@ -800,13 +796,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит FunctionDeclarationNode из IrOperation
+    /// Builds the default Axios function for an operation without mutable transport state.
     /// </summary>
-    public FunctionDeclarationNode BuildFunction(IrOperation operation, bool isExported = false)
+    /// <param name="operation">The HTTP operation to map.</param>
+    /// <param name="isExported">Whether the function is exported.</param>
+    /// <returns>The operation function declaration.</returns>
+    public FunctionDeclarationNode BuildFunction(IrOperation operation, bool isExported = false) =>
+        BuildFunctionForTransport(operation, "axios", isExported);
+
+    /// <summary>Builds an operation function with its transport supplied explicitly by the caller.</summary>
+    /// <param name="operation">The HTTP operation to map.</param>
+    /// <param name="transport">The selected HTTP transport.</param>
+    /// <param name="isExported">Whether the function is exported.</param>
+    /// <returns>The transport-specific function declaration.</returns>
+    private FunctionDeclarationNode BuildFunctionForTransport(IrOperation operation, string transport, bool isExported)
     {
         var name = new IdentifierNode(operation.MethodName);
         
-        var useResultType = UseParamsStyleEndpointTransport()
+        var useResultType = UseParamsStyleEndpointTransport(transport)
             && operation.Responses.Any(r => r.Type != null);
         var returnType = useResultType
             ? new GenericTypeNode(
@@ -820,8 +827,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 ? new CommentNode(operation.Summary, CommentKind.JSDoc)
                 : null;
         
-        var parameters = BuildFunctionParameters(operation);
-        var body = BuildFunctionBody(operation);
+        var parameters = BuildFunctionParameters(operation, transport);
+        var body = BuildFunctionBody(operation, transport);
         
         return new FunctionDeclarationNode(
             name: name,
@@ -835,9 +842,13 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит список SourceFile из IrDocument (модели, enum'ы и опционально endpoint-клиенты).
+    /// Builds the document's models, enums, and optional endpoints using the shared declaration order.
     /// </summary>
-    /// <param name="includeOperationEndpointFiles">Если false — не генерировать файлы операций (их пишет <see cref="TypeScriptCodeGenerator"/> с суффиксами .axios/.fetch).</param>
+    /// <param name="document">The finalized document associated with this builder.</param>
+    /// <param name="importPath">An optional import directory override.</param>
+    /// <param name="fileOrganization">The generated source layout.</param>
+    /// <param name="includeOperationEndpointFiles">Whether to include endpoint source files.</param>
+    /// <returns>The generated source declarations in dependency order.</returns>
     public IReadOnlyList<SourceFileNode> BuildSourceFiles(
         IrDocument document,
         string? importPath = null,
@@ -846,26 +857,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var sourceFiles = new List<SourceFileNode>();
         
-        // Генерируем модели в топологическом порядке
-        var orderedModelNames = document.TypeDependencies.TopologicalOrder;
-        var modelsByName = document.Models.ToDictionary(m => m.Name);
-        
-        foreach (var modelName in orderedModelNames)
-        {
-            if (modelsByName.TryGetValue(modelName, out var model))
-            {
-                sourceFiles.Add(BuildSourceFile(model, importPath, fileOrganization));
-            }
-        }
-        
-        // Добавляем модели, которые не были в топологическом порядке
-        foreach (var model in document.Models)
-        {
-            if (!orderedModelNames.Contains(model.Name))
-            {
-                sourceFiles.Add(BuildSourceFile(model, importPath, fileOrganization));
-            }
-        }
+        foreach (var model in DocumentContext.ModelsInDependencyOrder)
+            sourceFiles.Add(BuildSourceFile(model, importPath, fileOrganization));
         
         // Генерируем enum'ы
         foreach (var enumModel in document.Enums)
@@ -888,8 +881,10 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         return sourceFiles;
     }
 
-    private bool UseParamsStyleEndpointTransport() =>
-        _activeEndpointTransport is "axios" or "fetch";
+    /// <summary>Determines whether the transport uses the shared operation parameter object.</summary>
+    /// <param name="transport">The explicitly selected transport.</param>
+    /// <returns>Whether to emit a params-object function signature.</returns>
+    private static bool UseParamsStyleEndpointTransport(string transport) => transport is "axios" or "fetch";
 
     private string InferDefaultEndpointTransport()
     {
@@ -899,38 +894,39 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит SourceFile из IrClient (один файл со всеми операциями)
+    /// Builds one source file containing all operations of an API client.
     /// </summary>
+    /// <param name="client">The client operation group.</param>
+    /// <param name="importPath">An optional import directory override.</param>
+    /// <param name="fileOrganization">The generated source layout.</param>
+    /// <returns>The client source file.</returns>
     public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        OriginalNameMap.AddClient(_orig, client);
+
         var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients);
         var transport = InferDefaultEndpointTransport();
-        _activeEndpointTransport = transport;
-        try
-        {
-            var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
-            var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+        var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunctionForTransport(op, transport, isExported: false)).ToList();
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-            var clientFileBase = _namingConverter.ToCamelCase(client.Name);
-            return new SourceFileNode(
-                imports: imports,
-                exports: exports,
-                declarations: declarations,
-                fileDocumentation: TypeScriptDoc.FileHeader(
-                    $"{clientFileBase}.ts",
-                    $"endpoints/{clientFileBase}",
-                    $"HTTP client functions for the {client.Name} API."));
-        }
-        finally
-        {
-            _activeEndpointTransport = "axios";
-        }
+        var clientFileBase = _namingConverter.ToCamelCase(client.Name);
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{clientFileBase}.ts",
+                $"endpoints/{clientFileBase}",
+                $"HTTP client functions for the {client.Name} API."));
     }
 
     /// <summary>
-    /// Строит SourceFile для одной операции (endpoints/operationName/operationName.axios.ts или .fetch.ts).
+    /// Builds one operation source file without changing the builder's transport state.
     /// </summary>
+    /// <param name="operation">The HTTP operation contract.</param>
+    /// <param name="importPath">An optional import directory override.</param>
+    /// <param name="fileOrganization">The generated source layout.</param>
+    /// <param name="transport">The selected transport implementation.</param>
+    /// <returns>The transport operation source file.</returns>
     public SourceFileNode BuildSourceFileForOperation(
         IrOperation operation,
         string? importPath = null,
@@ -938,61 +934,51 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         string transport = "axios")
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
-        OriginalNameMap.AddOperation(_orig, operation);
-        _activeEndpointTransport = transport;
-        try
+
+        var dependencies = UseParamsStyleEndpointTransport(transport)
+            ? Array.Empty<string>()
+            : ExtractDependencies(client, excludeResponseModels: false);
+        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.OriginalMethodName);
+
+        imports = transport switch
         {
-            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix, _options?.ResultTypePrefix);
-            var dependencies = UseParamsStyleEndpointTransport()
-                ? Array.Empty<string>()
-                : ExtractDependencies(client, excludeResponseModels: false);
-            var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
+            "axios" => AddAxiosAndParamsImports(imports, operation, fileOrganization),
+            "fetch" => AddFetchAndParamsImports(imports, operation, fileOrganization),
+            _ => imports
+        };
 
-            imports = transport switch
-            {
-                "axios" => AddAxiosAndParamsImports(imports, operation, fileOrganization),
-                "fetch" => AddFetchAndParamsImports(imports, operation, fileOrganization),
-                _ => imports
-            };
+        var declarations = new List<DeclarationNode> { BuildFunctionForTransport(operation, transport, isExported: true) };
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-            var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
-            var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-
-            var endpointFileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
-            return new SourceFileNode(
-                imports: imports,
-                exports: exports,
-                declarations: declarations,
-                fileDocumentation: TypeScriptDoc.FileHeader(
-                    $"{endpointFileBase}.{transport}.ts",
-                    $"endpoints/{endpointFileBase}",
-                    $"{transport} client for the {operation.MethodName} operation."));
-        }
-        finally
-        {
-            _activeEndpointTransport = "axios";
-        }
+        var endpointFileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{endpointFileBase}.{transport}.ts",
+                $"endpoints/{endpointFileBase}",
+                $"{transport} client for the {operation.MethodName} operation."));
     }
 
     /// <summary>
-    /// Возвращает имя axios instance и соответствующий ImportNode.
-    /// Если заданы customInstancePath и customInstanceName — импортирует кастомный instance
-    /// как named export из указанного пути; иначе global <c>axios</c> (default import).
+    /// Resolves the configured Axios default without allowing an exported name to shadow generated parameters.
     /// </summary>
-    private (string InstanceName, ImportNode Import) GetAxiosInstanceImport()
+    /// <returns>The qualified default client expression and its runtime import.</returns>
+    private (ExpressionNode DefaultClient, ImportNode Import) GetAxiosInstanceImport()
     {
         var path = _options?.Axios?.CustomInstancePath;
         var name = _options?.Axios?.CustomInstanceName;
 
         if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
         {
-            return (name, new ImportNode(
-                items: new[] { new IdentifierNode(name) }.ToImmutableList(),
+            return (Member(Id("axiosDefaults"), name), new ImportNode(
+                items: new[] { new IdentifierNode("axiosDefaults") }.ToImmutableList(),
                 from: NormalizeModuleSpecifier(path),
-                kind: ImportKind.Named));
+                kind: ImportKind.Namespace));
         }
 
-        return ("axios", new ImportNode(
+        return (Id("axios"), new ImportNode(
             items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
             from: "axios",
             kind: ImportKind.Default));
@@ -1022,7 +1008,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var result = new List<ImportNode>();
 
-        var (axiosInstanceName, axiosInstanceImport) = GetAxiosInstanceImport();
+        var (_, axiosInstanceImport) = GetAxiosInstanceImport();
         result.Add(axiosInstanceImport);
 
         result.Add(new ImportNode(
@@ -1062,9 +1048,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         IrOperation operation,
         FileOrganization? fileOrganization)
     {
-        var operationFileName = GetModelFileName(operation.MethodName);
+        var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
 
-        var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+        var paramsBuilder = new TypeScriptParamsAstBuilder(DocumentContext, _namingConverter, BuildType);
         if (paramsBuilder.HasParameters(operation))
         {
             result.Add(new ImportNode(
@@ -1074,7 +1060,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix, _options?.ResultTypePrefix);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(DocumentContext, _namingConverter, BuildType, _options?.ResultTypeSuffix, _options?.ResultTypePrefix);
         if (resultsBuilder.HasResponsesWithBody(operation))
         {
             result.Add(new ImportNode(
@@ -1100,7 +1086,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             return;
 
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
-        var operationFileName = GetModelFileName(operation.MethodName);
+        var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         // Model schemas are co-located with their models under modelsPath (not a separate schemas/ tree).
         var modelsPath = fileOrganization?.ModelsPath ?? "models";
         var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
@@ -1151,11 +1137,15 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
     // Приватные вспомогательные методы для IR операций
 
-    private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
+    /// <summary>Builds the operation signature using an explicit transport selection.</summary>
+    /// <param name="operation">The operation parameter contract.</param>
+    /// <param name="transport">The selected HTTP transport.</param>
+    /// <returns>The ordered function parameters.</returns>
+    private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation, string transport)
     {
-        if (UseParamsStyleEndpointTransport())
+        if (UseParamsStyleEndpointTransport(transport))
         {
-            var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+            var paramsBuilder = new TypeScriptParamsAstBuilder(DocumentContext, _namingConverter, BuildType);
             var endpointParams = new List<ParameterDeclarationNode>();
             if (paramsBuilder.HasParameters(operation))
             {
@@ -1166,11 +1156,11 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                         isRequired: true));
             }
 
-            var optionsTypeName = _activeEndpointTransport == "axios"
+            var optionsTypeName = transport == "axios"
                 ? "AxiosRequestConfig"
                 : "RequestInit";
             var optionsType = new SimpleTypeNode(new IdentifierNode(optionsTypeName), isPrimitive: false, isNullable: false, isOptional: false);
-            var optionsDoc = _activeEndpointTransport == "axios"
+            var optionsDoc = transport == "axios"
                 ? "Optional Axios request config (headers, timeout, etc.)"
                 : "Optional RequestInit (headers, credentials, etc.)";
             endpointParams.Add(new ParameterDeclarationNode(
@@ -1183,6 +1173,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: new SimpleTypeNode(new IdentifierNode("AbortSignal"), isPrimitive: false, isNullable: false, isOptional: false),
                 isRequired: false,
                 documentation: new CommentNode("Optional AbortSignal for request cancellation", CommentKind.JSDoc)));
+            endpointParams.Add(TypeScriptHttpClientInjection.Parameter(transport == "axios"
+                ? new SimpleTypeNode(new IdentifierNode("AxiosInstance"))
+                : new TypeQueryTypeNode(Id("fetch"))));
             return endpointParams.ToImmutableList();
         }
 
@@ -1228,13 +1221,14 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит тело функции из IrOperation
+    /// Builds an operation body using the explicitly selected transport.
     /// </summary>
-    /// <param name="operation">IR операция</param>
-    /// <returns>AST узел блока с statements или null для type-only функции</returns>
-    private BlockNode? BuildFunctionBody(IrOperation operation)
+    /// <param name="operation">The operation to generate.</param>
+    /// <param name="transport">The selected HTTP transport.</param>
+    /// <returns>The function body, or null for an unsupported transport.</returns>
+    private BlockNode? BuildFunctionBody(IrOperation operation, string transport)
     {
-        return _activeEndpointTransport switch
+        return transport switch
         {
             "axios" => BuildAxiosFunctionBody(operation),
             "fetch" => BuildFetchFunctionBody(operation),
@@ -1242,9 +1236,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         };
     }
     
-    /// <summary>
-    /// Строит тело функции с Axios вызовами, params interface и Zod serialization/deserialization
-    /// </summary>
+    /// <summary>Builds the Axios request and dispatches all documented response status variants.</summary>
+    /// <param name="operation">The operation whose endpoint is generated.</param>
+    /// <returns>The complete Axios operation body.</returns>
     private BlockNode BuildAxiosFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
@@ -1256,16 +1250,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var bodySource = ctx.BodySource;
         var headersSource = ctx.HeadersSource;
 
-        var (axiosInstanceName, _) = GetAxiosInstanceImport();
-        var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("axiosInstance"),
-            type: axiosInstanceType,
-            initializer: new IdentifierExpressionNode(new IdentifierNode(axiosInstanceName))));
+        var (defaultAxiosClient, _) = GetAxiosInstanceImport();
+        statements.Add(TypeScriptHttpClientInjection.Declaration(defaultAxiosClient, "axiosInstance"));
         statements.Add(CreateBlankLineStatement());
 
         var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
-        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
+        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(DocumentContext, _namingConverter, BuildType);
         var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
 
         // Используем unknown — не добавляем импорт модели body, работаем с params
@@ -1337,7 +1327,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
+                .Where(r => int.TryParse(r.StatusCode, out _))
                 .ToList();
 
             foreach (var resp in responsesWithType)
@@ -1437,15 +1427,16 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private ExpressionNode CreateParseCall(string schemaName, ExpressionNode input) =>
         _validation.ValidateNamed(schemaName, input);
 
-    /// <summary>
-    /// Строит выражение тела (body) для per-status result-ветки клиента. Тип, требующий построения
-    /// схемы (union/array/...), валидируется ВЫНЕСЕННОЙ именованной схемой <c>{Op}Result{Status}Schema</c>
-    /// из <c>{op}.results.schemas.ts</c> (строится один раз, а не на каждый вызов); голая ссылка на модель —
-    /// напрямую <c>{Model}Schema</c>. Для unknown/void и при выключенной валидации возвращает сырые данные.
-    /// </summary>
+    /// <summary>Builds a per-status body, preserving bodyless variants and applying named validation schemas.</summary>
+    /// <param name="operation">The operation whose response is validated.</param>
+    /// <param name="response">The documented response variant.</param>
+    /// <param name="dataRef">The decoded response data expression.</param>
+    /// <returns>Undefined for a bodyless response, otherwise its raw or validated value.</returns>
     private ExpressionNode BuildStatusResultBody(IrOperation operation, IrResponse response, ExpressionNode dataRef)
     {
-        var type = response.Type!;
+        if (response.Type == null)
+            return new IdentifierExpressionNode(new IdentifierNode("undefined"));
+        var type = response.Type;
         if (!_validation.IsEnabled || !ValidationTypes.IsValidatable(type))
             return dataRef;
 

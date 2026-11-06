@@ -7,60 +7,51 @@ using ValIO.Generators.CSharp.Options;
 namespace ValIO.Generators.CSharp.Steps;
 
 /// <summary>
-/// Step: генерирует C# record/class из IR моделей.
+/// Generates C# model files in the document context's canonical dependency order.
 /// </summary>
 public sealed class CSharpModelsStep : ICodeGenerationStep
 {
+    /// <summary>Converts schema identifiers to C# names.</summary>
     private readonly INamingConverter _namingConverter;
+    /// <summary>Renders this pipeline's declarations without sharing buffers with other pipelines.</summary>
     private readonly ICSharpAstRenderer _renderer;
 
+    /// <inheritdoc />
     public string Name => "csharp-models";
+    /// <inheritdoc />
     public int Order => 10;
 
+    /// <summary>Initializes model generation with pipeline-owned services.</summary>
+    /// <param name="namingConverter">The C# identifier converter.</param>
+    /// <param name="renderer">The renderer owned by this pipeline.</param>
     public CSharpModelsStep(INamingConverter namingConverter, ICSharpAstRenderer renderer)
     {
         _namingConverter = namingConverter;
         _renderer = renderer;
     }
 
+    /// <inheritdoc />
     public bool ShouldExecute(GenerationContext context)
         => context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0;
 
+    /// <inheritdoc/>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter);
+        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts);
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
-
-        // Даём построителю справочник моделей — чтобы BuildClass резолвил allOf-наследование
-        // и не переобъявлял свойства базовых классов (иначе CS0108 hides inherited member).
-        builder.ModelsByName = byName;
-
-        // Справочник имён enum'ов — чтобы необязательные enum-свойства ($ref на enum, value-type)
-        // стали nullable и не роняли System.Text.Json на пришедшем с сервера null.
-        builder.EnumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
-
-        var processed = new HashSet<string>();
-
-        foreach (var name in orderedNames)
-        {
-            if (!byName.TryGetValue(name, out var model)) continue;
+        foreach (var model in context.DocumentContext.ModelsInDependencyOrder)
             AddModelFile(context, builder, model, ns);
-            processed.Add(name);
-        }
-
-        foreach (var model in context.IrDocument.Models)
-        {
-            if (!processed.Contains(model.Name))
-                AddModelFile(context, builder, model, ns);
-        }
 
         return Task.CompletedTask;
     }
 
+    /// <summary>Renders one model into the request-owned output collection.</summary>
+    /// <param name="context">The request receiving generated files.</param>
+    /// <param name="builder">The builder sharing the document context.</param>
+    /// <param name="model">The model to render.</param>
+    /// <param name="ns">The generated namespace.</param>
     private void AddModelFile(GenerationContext context, CSharpAstBuilder builder,
         ValIO.Core.IR.IrModel model, string ns)
     {

@@ -2,40 +2,20 @@ using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Tests.TestHelpers;
+using ValIO.Tests.Fixtures;
 
 namespace ValIO.Core.Tests.IR;
 
-/// <summary>
-/// Структурные инварианты IR, защищающие сразу все 12 генераторов:
-/// в IR не должно быть вырожденных intersection/union (&lt;2 членов) и осиротевших inline-моделей.
-/// </summary>
+/// <summary>Guards shared IR composition cardinality and inline-model reachability across all generators.</summary>
 [TestFixture]
 public class IrInvariantsTests
 {
-    private const string CompositionHeavyDoc = """
-    {
-      "openapi":"3.0.3",
-      "info":{"title":"T","version":"1.0.0"},
-      "paths":{},
-      "components":{"schemas":{
-        "Mode":{"type":"string","enum":["a","b"]},
-        "Base":{"type":"object","properties":{"id":{"type":"string"}}},
-        "Extra":{"type":"object","properties":{"x":{"type":"string"}}},
-        "Wrapper":{"type":"object","properties":{
-          "mode":{"allOf":[{"$ref":"#/components/schemas/Mode"}],"nullable":true},
-          "single":{"allOf":[{"$ref":"#/components/schemas/Base"}]},
-          "nested":{"allOf":[{"allOf":[{"$ref":"#/components/schemas/Base"}]}]},
-          "intersection":{"allOf":[{"$ref":"#/components/schemas/Base"},{"$ref":"#/components/schemas/Extra"}]}
-        }},
-        "Derived":{"allOf":[{"$ref":"#/components/schemas/Base"},{"type":"object","properties":{"y":{"type":"string"}}}]}
-      }}
-    }
-    """;
-
+    /// <summary>Ensures normalized IR compositions never retain a redundant single-member wrapper.</summary>
+    /// <returns>The asynchronous assertion operation.</returns>
     [Test]
     public async Task BuiltIr_HasNoSingleArmIntersectionOrUnion()
     {
-        var ir = await IrTestHarness.BuildIrAsync(CompositionHeavyDoc);
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/composition-invariants-3.0.json"));
 
         foreach (var type in IrTypeWalker.AllTypes(ir))
         {
@@ -46,10 +26,12 @@ public class IrInvariantsTests
         }
     }
 
+    /// <summary>Ensures every allocated inline model is referenced by another declaration.</summary>
+    /// <returns>The asynchronous assertion operation.</returns>
     [Test]
     public async Task BuiltIr_HasNoOrphanModels()
     {
-        var ir = await IrTestHarness.BuildIrAsync(CompositionHeavyDoc);
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/composition-invariants-3.0.json"));
 
         // Every model is either reachable from another model (dependency edge) or a top-level
         // component schema. Phase C must not leave behind inline models with no incoming reference.

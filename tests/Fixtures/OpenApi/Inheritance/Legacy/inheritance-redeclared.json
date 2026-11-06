@@ -1,0 +1,42 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "PostBlock": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
+      "TextBlock": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PostBlock"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "nullable": true
+              },
+              "format": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

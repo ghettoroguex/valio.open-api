@@ -9,7 +9,7 @@ using static ValIO.Generators.TypeScript.Validation.ValidationAst;
 
 namespace ValIO.Generators.TypeScript.Validation;
 
-/// <summary>Валидация через TypeBox: <c>Value.Parse(Schema, input)</c>. Схемы строит <see cref="TypeBoxAstBuilder"/>.</summary>
+/// <summary>Validates original values through TypeBox without cloning binary objects or coercing model values.</summary>
 internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
 {
     private readonly TypeBoxAstBuilder _builder;
@@ -26,17 +26,20 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
 
     public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.PatternConstName;
 
+    /// <inheritdoc/>
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
-        Call(Member(Id("Value"), "Parse"), _builder.BuildSchemaFromIrType(type), input);
+        Call(Member(Id("Value"), "Decode"), _builder.BuildSchemaFromIrType(type), input);
 
     public ExpressionNode BuildSchema(IrType type) => _builder.BuildSchemaFromIrType(type);
 
     public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null) =>
         _builder.BuildObjectFromParameters(parameters);
 
+    /// <inheritdoc/>
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
-        Call(Member(Id("Value"), "Parse"), Id(schemaName), input);
+        Call(Member(Id("Value"), "Decode"), Id(schemaName), input);
 
+    /// <inheritdoc/>
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
@@ -45,17 +48,30 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
         // вынесены в {op}.params.schema.ts, поэтому клиенту `Type` для них не нужен.
         if (inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema))
             imports.Add(TypeImport());
+        if (inlineConstructedTypes.Any(TypeBoxInstanceAst.RequiresRegistry))
+            imports.Add(RegistryImport());
+        if (inlineConstructedTypes.Any(_builder.RequiresFormatRegistry))
+            imports.Add(FormatRegistryImport());
 
-        // `Value.Parse(...)` нужен при любой валидации (тело/параметры/именованные result-схемы).
+        // Decode validates original input without mutating or coercing it, retaining Blob and File prototypes.
         if (inlineConstructedTypes.Count > 0 || hasParams || hasNamedSchemaParse)
             imports.Add(ValueImport());
 
         return imports.ToImmutable();
     }
 
-    public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
-        // Файл объявляет `Type.Union([...])` и т.п. → нужен только `Type` (без `Value`).
-        definedTypes.Count > 0 ? [TypeImport()] : [];
+    /// <inheritdoc/>
+    public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes)
+    {
+        if (definedTypes.Count == 0)
+            return [];
+        var imports = new List<ImportNode> { TypeImport() };
+        if (definedTypes.Any(TypeBoxInstanceAst.RequiresRegistry))
+            imports.Add(RegistryImport());
+        if (definedTypes.Any(_builder.RequiresFormatRegistry))
+            imports.Add(FormatRegistryImport());
+        return imports;
+    }
 
     /// <inheritdoc/>
     /// <remarks>TypeBox derives the static type via <c>Static&lt;typeof Schema&gt;</c>, so the const is not annotated.</remarks>
@@ -66,4 +82,13 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
 
     private static ImportNode ValueImport() =>
         new(ImmutableList.Create(new IdentifierNode("Value")), "@sinclair/typebox/value", ImportKind.Named);
+
+    /// <summary>Imports TypeBox's registered custom-kind support for Blob and File schemas.</summary>
+    /// <returns>The custom-kind registry import.</returns>
+    private static ImportNode RegistryImport() => new([new IdentifierNode("Kind"), new IdentifierNode("TypeRegistry")],
+        "@sinclair/typebox", ImportKind.Named);
+
+    /// <summary>Imports the registry used by standard string format predicates.</summary>
+    /// <returns>The standard format registry import.</returns>
+    private static ImportNode FormatRegistryImport() => new([new IdentifierNode("FormatRegistry")], "@sinclair/typebox", ImportKind.Named);
 }

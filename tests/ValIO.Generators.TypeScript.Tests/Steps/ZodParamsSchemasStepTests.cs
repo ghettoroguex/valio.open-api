@@ -48,8 +48,7 @@ public class ZodParamsSchemasStepTests
         paramsSchema!.Content.Should().Contain("GetUserByIdRouteParamsSchema");
     }
 
-    // Request A: the params-schema const is typed against its params interface (imported type-only),
-    // mirroring model schemas. getUserById has a single (route) param group → the flat {Op}Params type.
+    /// <summary>Verifies Zod schemas accept unknown input while checking their output against the parameter interface.</summary>
     [Test]
     public async Task Zod_ParamsSchema_IsTypedWithParamsInterface()
     {
@@ -66,11 +65,10 @@ public class ZodParamsSchemasStepTests
         paramsSchema.Content.Should().Contain("import { z } from \"zod\"");
         paramsSchema.Content.Should().Contain("import type { ZodSchema } from \"zod\"");
         paramsSchema.Content.Should().Contain("import type { GetUserByIdParams } from \"./getUserById.params\"");
-        paramsSchema.Content.Should().Contain("GetUserByIdRouteParamsSchema: ZodSchema<GetUserByIdParams>");
+        paramsSchema.Content.Should().Contain("GetUserByIdRouteParamsSchema: ZodSchema<GetUserByIdParams, z.ZodTypeDef, unknown>");
     }
 
-    // Query params arrive as strings → numeric/boolean primitives coerce; OpenAPI default → .default(),
-    // and the parameter description → .describe() (Zod schema metadata).
+    /// <summary>Verifies parameter coercion preserves false strings alongside defaults and descriptions.</summary>
     [Test]
     public async Task Zod_QueryParams_Coerce_Default_AndDescribe()
     {
@@ -85,8 +83,9 @@ public class ZodParamsSchemasStepTests
             f.RelativePath.EndsWith("listItems.params.schema.ts", StringComparison.Ordinal));
         // page: integer, optional, default 10, described.
         paramsSchema.Content.Should().Contain("z.coerce.number().int().optional().default(10).describe(\"Page number (1-based).\")");
-        // active: boolean, optional, coerced.
-        paramsSchema.Content.Should().Contain("z.coerce.boolean().optional()");
+        // The nonempty string "false" must be parsed as false instead of JavaScript truthiness.
+        paramsSchema.Content.Should().Contain("z.enum([\"true\", \"false\"]).transform((value) => (value === \"true\"))");
+        paramsSchema.Content.Should().NotContain("z.coerce.boolean()");
     }
 
     [Test]

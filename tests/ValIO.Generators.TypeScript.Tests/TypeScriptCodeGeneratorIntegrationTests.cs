@@ -89,6 +89,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
         userFile.Content.Should().Contain("email:");
     }
 
+    /// <summary>Verifies GenerateClients_WithFetch_GeneratesFetchClient with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task GenerateClients_WithFetch_GeneratesFetchClient()
     {
@@ -100,7 +102,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .ToList();
 
         fetchFiles.Should().NotBeEmpty("should generate fetch client files");
-        fetchFiles[0].Content.Should().Contain("fetch(");
+        fetchFiles[0].Content.Should().Contain("httpClient(");
     }
 
     [Test]
@@ -234,6 +236,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
         userSchema.Content.Should().Contain("v.InferOutput<typeof UserSchema>");
     }
 
+    /// <summary>Verifies GenerateClients_WithKy_GeneratesKyClient with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task GenerateClients_WithKy_GeneratesKyClient()
     {
@@ -246,7 +250,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
 
         kyFiles.Should().NotBeEmpty("should generate ky client files");
         kyFiles[0].Content.Should().Contain("import ky");
-        kyFiles[0].Content.Should().Contain("ky.get");
+        kyFiles[0].Content.Should().Contain("httpClient.get");
     }
 
     [Test]

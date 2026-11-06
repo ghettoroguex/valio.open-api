@@ -17,7 +17,7 @@ namespace ValIO.Generators.Cpp.Ast.Renderers;
 /// Рендерер C++/UE AST в строковый код.
 /// Visitor Pattern — каждый узел рендерится через свойства, без Metadata.
 /// </summary>
-public sealed class CppAstRenderer : CppAstVisitorBase<string>
+public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
 {
     private int _indentLevel;
     private const string IndentChar = "\t";
@@ -291,24 +291,30 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     // C++ Function / Method nodes
     // ===================================================================
 
+    /// <inheritdoc />
     public override string VisitCppFreeFunction(CppFreeFunctionNode node)
     {
         var sb = new StringBuilder();
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
+        var constexprPrefix = node.IsConstexpr ? "constexpr " : node.IsInline ? "inline " : "";
         var returnStr = RenderType(node.ReturnType);
-        var paramsStr = string.Join(",\n" + Indent() + "\t", node.Parameters.Select(RenderParameterInline));
+        var constSuffix = node.IsConst ? " const" : "";
         if (node.IsDeclarationOnly)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
-            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({inlineParams});");
+            sb.AppendLine($"{Indent()}{constexprPrefix}{returnStr} {node.Name.Name}({inlineParams}){constSuffix};");
         }
         else if (node.Body != null)
         {
-            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({string.Join(", ", node.Parameters.Select(RenderParameterInline))})");
-            sb.AppendLine($"{Indent()}{{");
-            sb.AppendLine($"{Indent()}\t// TODO: implement");
-            sb.AppendLine($"{Indent()}}}");
+            var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
+            var isConstructor = node.Metadata.ContainsKey("cpp.constructor");
+            var returnPrefix = isConstructor ? string.Empty : RenderType(node.ReturnType) + " ";
+            var initializers = node.Initializers.Count == 0
+                ? string.Empty
+                : " : " + string.Join(", ", node.Initializers.Select(Visit));
+            sb.Append($"{Indent()}{constexprPrefix}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}{initializers}").AppendLine();
+            sb.Append(Visit(node.Body));
         }
         sb.AppendLine();
         return sb.ToString();
@@ -319,16 +325,17 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         return RenderParameterInline(node);
     }
 
+    /// <inheritdoc />
     public override string VisitCppMethodImplementation(CppMethodImplementationNode node)
     {
         var sb = new StringBuilder();
+        if (node.Documentation is not null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
         var returnStr = node.ReturnType != null ? RenderType(node.ReturnType) + " " : "";
         var paramsStr = node.Parameters.Count > 0 ? string.Join(", ", node.Parameters.Select(RenderParameterInline)) : "";
         var constStr = node.IsConst ? " const" : "";
         sb.AppendLine($"{returnStr}{node.ClassName.Name}::{node.MethodName.Name}({paramsStr}){constStr}");
-        sb.AppendLine("{");
-        sb.AppendLine("\t// TODO: implement");
-        sb.AppendLine("}");
+        sb.Append(Visit(node.Body));
         return sb.ToString();
     }
 
@@ -548,6 +555,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var obj = Visit(node.Object);
+        if (node.Object is UnaryExpressionNode or BinaryExpressionNode or ConditionalExpressionNode)
+            obj = "(" + obj + ")";
         var op = node.UseScopeOperator ? "::" : (node.UseArrowOperator ? "->" : ".");
         return $"{obj}{op}{node.Member.Name}";
     }
@@ -582,7 +591,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     {
         return node.LiteralKind switch
         {
-            LiteralKind.String => $"TEXT(\"{EscapeCppString(node.Value?.ToString() ?? "")}\")",
+            LiteralKind.String => $"\"{EscapeCppString(node.Value?.ToString() ?? "")}\"",
             LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => (node.Value?.ToString() ?? "false").ToLowerInvariant(),
             LiteralKind.Null => "{}",
@@ -620,21 +629,285 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         $"TMap<{RenderType(node.KeyType)}, {RenderType(node.ValueType)}>";
     public override string VisitConditionalExpression(ConditionalExpressionNode node) => "";
     public override string VisitAwaitExpression(AwaitExpressionNode node) => "";
-    public override string VisitCastExpression(CastExpressionNode node) => "";
 
-    public override string VisitForEachStatement(ForEachStatementNode node) => "";
-    public override string VisitThrowStatement(ThrowStatementNode node) => "";
+    public override string VisitCastExpression(CastExpressionNode node)
+        => $"static_cast<{RenderType(node.TargetType)}>({Visit(node.Expression)})";
+
+    public override string VisitIndexAccessExpression(IndexAccessExpressionNode node)
+        => $"{Visit(node.Object)}[{Visit(node.Index)}]";
+
+    /// <inheritdoc />
+    public override string VisitForEachStatement(ForEachStatementNode node)
+    {
+        return $"{Indent()}for (const auto& {node.Variable.Name} : {Visit(node.Collection)}){Environment.NewLine}{Visit(node.Body)}";
+    }
+    public override string VisitThrowStatement(ThrowStatementNode node)
+        => $"throw {Visit(node.Expression)};";
     public override string VisitUsingStatement(UsingStatementNode node) => "";
-    public override string VisitTryCatchStatement(TryCatchStatementNode node) => "";
-    public override string VisitCatchClause(CatchClauseNode node) => "";
+    /// <inheritdoc />
+    /// <exception cref="NotSupportedException">A finally block is supplied without a C++ lifetime guard.</exception>
+    public override string VisitTryCatchStatement(TryCatchStatementNode node)
+    {
+        if (node.FinallyBlock is not null)
+            throw new NotSupportedException("C++ finally blocks require an explicit RAII lifetime guard.");
+        var rendered = new StringBuilder().AppendLine($"{Indent()}try").Append(Visit(node.TryBlock));
+        foreach (var clause in node.CatchClauses)
+            rendered.Append(Visit(clause));
+        return rendered.ToString();
+    }
+
+    /// <inheritdoc />
+    public override string VisitCatchClause(CatchClauseNode node)
+    {
+        var declaration = node.ExceptionType is null ? "..." : RenderType(node.ExceptionType)
+            + (node.ExceptionVariable is null ? string.Empty : " " + node.ExceptionVariable.Name);
+        return $"{Indent()}catch ({declaration}){Environment.NewLine}{Visit(node.Body)}";
+    }
 
     public override string VisitTypeDeclaration(TypeDeclarationNode node) => "";
     public override string VisitPropertyDeclaration(PropertyDeclarationNode node) => "";
-    public override string VisitMethodDeclaration(MethodDeclarationNode node) => "";
-    public override string VisitParameterDeclaration(ParameterDeclarationNode node) => "";
-    public override string VisitEnumMemberDeclaration(EnumMemberDeclarationNode node) => "";
-    public override string VisitEnumDeclaration(EnumDeclarationNode node) => "";
-    public override string VisitInterfaceDeclaration(InterfaceDeclarationNode node) => "";
+
+    // ===================================================================
+    // Универсальные core-декларации (std-профиль): namespace, class, struct,
+    // field, method, enum, interface. UE-профиль их не строит.
+    // ===================================================================
+
+    public override string VisitNamespaceDeclaration(NamespaceDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
+        sb.AppendLine($"namespace {node.Name.Name}");
+        sb.AppendLine("{");
+        _indentLevel++;
+        var first = true;
+        foreach (var declaration in node.Declarations)
+        {
+            if (!first)
+                sb.AppendLine();
+            first = false;
+            // Дочерняя декларация рендерится от нулевого отступа и префиксуется
+            // целиком — иначе её собственные Indent()-строки получили бы двойной сдвиг.
+            var savedIndent = _indentLevel;
+            _indentLevel = 0;
+            var rendered = Visit(declaration);
+            _indentLevel = savedIndent;
+            AppendIndented(sb, rendered);
+        }
+        _indentLevel--;
+        sb.AppendLine($"}} // namespace {node.Name.Name}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Добавляет отрендеренный блок, префиксуя каждую непустую строку текущим отступом
+    /// (декларации внутри namespace должны быть сдвинуты целиком, а не только поля).
+    /// </summary>
+    private void AppendIndented(StringBuilder sb, string rendered)
+    {
+        var prefix = Indent();
+        var lines = rendered.Split('\n');
+        // Последний пустой элемент split — артефакт замыкающего '\n', его перенос уже emitted.
+        var last = lines.Length - 1;
+        if (last >= 0 && lines[last].Length == 0)
+            last--;
+        for (var i = 0; i <= last; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            if (line.Length == 0)
+                sb.AppendLine();
+            else
+                sb.Append(prefix).AppendLine(line);
+        }
+    }
+
+    public override string VisitClassDeclaration(ClassDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
+        var bases = node.BaseTypes.Count > 0
+            ? " : " + string.Join(", ", node.BaseTypes.Select(t => $"public {RenderType(t)}"))
+            : "";
+        // C# sealed → C++ final (по грамматике — ДО списка баз).
+        var finalStr = node.IsSealed ? " final" : "";
+        sb.AppendLine($"class {node.Name.Name}{finalStr}{bases}");
+        sb.AppendLine("{");
+        _indentLevel++;
+        // Класс: секции доступа всегда явные (default-доступ C++ — private).
+        RenderMemberSections(sb, node.Members, defaultAccess: AccessModifier.Private, alwaysEmitFirstLabel: true);
+        _indentLevel--;
+        sb.AppendLine("};");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public override string VisitStructDeclaration(StructDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
+        var bases = node.BaseTypes.Count > 0
+            ? " : " + string.Join(", ", node.BaseTypes.Select(t => $"public {RenderType(t)}"))
+            : "";
+        sb.AppendLine($"struct {node.Name.Name}{bases}");
+        sb.AppendLine("{");
+        _indentLevel++;
+        // Структура: default-доступ public — метка не печатается, пока не встретится непубличный член.
+        RenderMemberSections(sb, node.Members, defaultAccess: AccessModifier.Public, alwaysEmitFirstLabel: false);
+        _indentLevel--;
+        sb.AppendLine("};");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public override string VisitInterfaceDeclaration(InterfaceDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
+        var bases = node.BaseTypes.Count > 0
+            ? " : " + string.Join(", ", node.BaseTypes.Select(t => $"public {RenderType(t)}"))
+            : "";
+        sb.AppendLine($"class {node.Name.Name}{bases}");
+        sb.AppendLine("{");
+        _indentLevel++;
+        sb.AppendLine($"{Indent()}public:");
+        sb.AppendLine($"{Indent()}virtual ~{node.Name.Name}() = default;");
+        if (node.Members.Count > 0)
+            sb.AppendLine();
+        foreach (var member in node.Members)
+            sb.Append(Visit(member));
+        _indentLevel--;
+        sb.AppendLine("};");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public override string VisitFieldDeclaration(FieldDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
+        var typeStr = RenderType(node.Type);
+        var defaultStr = node.DefaultValue != null ? $" = {RenderDefaultValue(node.DefaultValue)}" : "";
+        var prefix = node.Metadata.ContainsKey("cpp.constexpr")
+            ? node.IsStatic ? "inline static constexpr " : "constexpr "
+            : (node.IsStatic ? "inline static " : "") + (node.IsReadOnly ? "const " : "");
+        sb.AppendLine($"{Indent()}{prefix}{typeStr} {node.Name.Name}{defaultStr};");
+        return sb.ToString();
+    }
+
+    public override string VisitMethodDeclaration(MethodDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null && !node.UseInheritDoc)
+            sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
+
+        var isConstructor = node.Metadata.ContainsKey(ConstructorMetadataKey);
+        var isPureVirtual = node.IsAbstract || node.IsInterfaceMethod;
+        var prefixParts = new List<string>();
+        if (isConstructor && node.Metadata.ContainsKey("cpp.explicit"))
+            prefixParts.Add("explicit");
+        if (node.IsStatic)
+            prefixParts.Add("static");
+        if (node.IsVirtual || isPureVirtual)
+            prefixParts.Add("virtual");
+        var prefix = prefixParts.Count > 0 ? string.Join(" ", prefixParts) + " " : "";
+
+        var returnType = isConstructor ? string.Empty : (node.ReturnType != null ? RenderType(node.ReturnType) : "void");
+        var parameters = string.Join(", ", node.Parameters.Select(RenderCoreParameterInline));
+        var constStr = node.IsConst ? " const" : "";
+        var noexceptStr = node.Noexcept ? " noexcept" : "";
+        var overrideStr = node.IsOverride ? " override" : "";
+        var pureStr = isPureVirtual ? " = 0" : "";
+        var separator = isConstructor ? string.Empty : " ";
+
+        sb.AppendLine($"{Indent()}{prefix}{returnType}{separator}{node.Name.Name}({parameters}){constStr}{noexceptStr}{overrideStr}{pureStr};");
+        return sb.ToString();
+    }
+
+    private const string ConstructorMetadataKey = "cpp.constructor";
+
+    public override string VisitEnumDeclaration(EnumDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        if (node.Documentation != null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
+        var underlying = node.UnderlyingType != null ? $" : {RenderType(node.UnderlyingType)}" : "";
+        sb.AppendLine($"enum class {node.Name.Name}{underlying}");
+        sb.AppendLine("{");
+        _indentLevel++;
+        for (var i = 0; i < node.Members.Count; i++)
+        {
+            var valueStr = Visit(node.Members[i]).TrimEnd();
+            var comma = i < node.Members.Count - 1 ? "," : "";
+            sb.AppendLine($"{Indent()}{valueStr}{comma}");
+        }
+        _indentLevel--;
+        sb.AppendLine("};");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public override string VisitEnumMemberDeclaration(EnumMemberDeclarationNode node)
+    {
+        var valueStr = node.Value != null ? $" = {RenderDefaultValue(node.Value)}" : "";
+        var value = $"{node.Name.Name}{valueStr}";
+        return node.Documentation is null ? value : RenderDoxygenComment(node.Documentation.Text) + "\n" + Indent() + value;
+    }
+
+    public override string VisitParameterDeclaration(ParameterDeclarationNode node) => RenderCoreParameterInline(node);
+
+    /// <summary>
+    /// Рендерит члены class/struct с секциями доступа: метка печатается для первого
+    /// члена (если alwaysEmitFirstLabel) и при каждой смене AccessModifier.
+    /// </summary>
+    private void RenderMemberSections(StringBuilder sb, IReadOnlyList<DeclarationNode> members, AccessModifier defaultAccess, bool alwaysEmitFirstLabel)
+    {
+        var currentAccess = defaultAccess;
+        var emittedAny = false;
+        foreach (var member in members)
+        {
+            var memberAccess = member switch
+            {
+                FieldDeclarationNode field => field.AccessModifier,
+                MethodDeclarationNode method => method.AccessModifier,
+                _ => defaultAccess,
+            };
+            var needsLabel = !emittedAny
+                ? alwaysEmitFirstLabel || memberAccess != defaultAccess
+                : memberAccess != currentAccess;
+            if (needsLabel)
+            {
+                if (emittedAny)
+                    sb.AppendLine();
+                sb.AppendLine($"{Indent()}{RenderAccessModifier(memberAccess)}:");
+                currentAccess = memberAccess;
+            }
+            sb.Append(Visit(member));
+            emittedAny = true;
+        }
+    }
+
+    private static string RenderAccessModifier(AccessModifier access) => access switch
+    {
+        AccessModifier.Public => "public",
+        AccessModifier.Protected => "protected",
+        AccessModifier.Internal => "protected", // ближайший C++ аналог для секций
+        _ => "private",
+    };
+
+    /// <summary>Параметр core-метода: «Type Name = default» (Type null → только имя).</summary>
+    private string RenderCoreParameterInline(ParameterDeclarationNode param)
+    {
+        var defaultStr = param.DefaultValue != null ? $" = {RenderDefaultValue(param.DefaultValue)}" : "";
+        if (param.Type == null)
+            return $"{param.Name.Name}{defaultStr}";
+        return $"{RenderType(param.Type)} {param.Name.Name}{defaultStr}";
+    }
 
     public override string VisitHttpMethod(HttpMethodNode node) => "";
     public override string VisitRoute(RouteNode node) => "";
@@ -659,24 +932,17 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         return $"{constStr}{typeStr}{refStr} {param.Name.Name}{defaultStr}";
     }
 
-    private static string RenderDefaultValue(ExpressionNode expr)
-    {
-        if (expr is LiteralExpressionNode lit)
-        {
-            return lit.LiteralKind switch
-            {
-                LiteralKind.String => lit.Value?.ToString() ?? "",
-                LiteralKind.Number => lit.Value?.ToString() ?? "0",
-                LiteralKind.Boolean => lit.Value?.ToString()?.ToLowerInvariant() ?? "false",
-                LiteralKind.Null => "{}",
-                _ => lit.Value?.ToString() ?? ""
-            };
-        }
-        return expr.ToString() ?? "";
-    }
+    /// <summary>Renders an initializer through the same typed expression visitor used by function bodies.</summary>
+    /// <param name="expression">The field, parameter, or enum initializer.</param>
+    /// <returns>The C++ expression, preserving structured operators and literal escaping.</returns>
+    private string RenderDefaultValue(ExpressionNode expression) => Visit(expression);
 
+    /// <summary>Renders schema prose without allowing it to terminate the generated comment.</summary>
+    /// <param name="text">The Doxygen documentation text.</param>
+    /// <returns>The escaped C++ documentation comment.</returns>
     private string RenderDoxygenComment(string text)
     {
+        text = text.Replace("*/", "* /", StringComparison.Ordinal);
         if (text.Contains('\n'))
         {
             var lines = text.Split('\n');

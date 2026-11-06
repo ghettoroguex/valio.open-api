@@ -1,0 +1,20 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Holder": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "allOf": []
+          }
+        }
+      }
+    }
+  }
+}

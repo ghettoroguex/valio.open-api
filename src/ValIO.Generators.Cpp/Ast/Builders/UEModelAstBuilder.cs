@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -13,58 +14,62 @@ using ValIO.Generators.Cpp.Services;
 
 namespace ValIO.Generators.Cpp.Ast.Builders;
 
-/// <summary>
-/// Строитель AST для UE модели (USTRUCT) из IR представления.
-/// Генерирует CppHeaderFileNode, содержащий один UStructDeclarationNode.
-/// </summary>
-public sealed class UEModelAstBuilder
+/// <summary>Builds Unreal model headers with shared document declaration indexes.</summary>
+public sealed class UEModelAstBuilder : AstBuilderBase
 {
+    /// <summary>Maps types using the shared document context.</summary>
     private readonly UETypeMapper _typeMapper;
+    /// <summary>Supplies Unreal identifier and path naming.</summary>
     private readonly UENamingConvention _naming;
+    /// <summary>Supplies the selected Unreal generation options.</summary>
     private readonly CppGenerationOptions _options;
 
-    public UEModelAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options)
+    /// <summary>Requires one document context shared with the type mapper.</summary>
+    /// <param name="typeMapper">The document-aware Unreal type mapper.</param>
+    /// <param name="naming">The Unreal identifier and file naming rules.</param>
+    /// <param name="options">The Unreal generation options.</param>
+    /// <param name="documentContext">The mandatory finalized document indexes.</param>
+    /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+    /// <exception cref="ArgumentException">The mapper belongs to a different document context.</exception>
+    public UEModelAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options, IrDocumentContext documentContext) : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        if (!ReferenceEquals(typeMapper.DocumentContext, documentContext))
+            throw new ArgumentException("The mapper and builder must share a document context.", nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <summary>
-    /// Строит CppHeaderFileNode из IrModel
+    /// Builds an Unreal Engine model header without discarding unsupported recursive properties.
     /// </summary>
-    /// <param name="modelLookup">Словарь моделей по имени (для раскрытия allOf)</param>
-    /// <param name="warnings">Коллекция для записи предупреждений (пропуск рекурсивных свойств)</param>
-    public CppHeaderFileNode Build(IrModel model, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, ICollection<string>? warnings = null)
+    /// <param name="model">The model contract.</param>
+    /// <param name="warnings">The optional generation diagnostics.</param>
+    /// <returns>The generated Unreal Engine header.</returns>
+    /// <exception cref="NotSupportedException">The model requires unsupported recursive ownership or composition codecs.</exception>
+    public CppHeaderFileNode Build(IrModel model, ICollection<string>? warnings = null)
     {
+        var enumNames = EnumNames;
+        var modelLookup = ModelsByName;
         var structName = _naming.StructName(model.Name);
         // File name uses the ORIGINAL (pre-affix) name so the emitted file/include doesn't change with affixes.
         var fileName = _naming.ModelFileName(model.OriginalName);
 
         var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
+        CppTypeReferenceCollector.EnsureSupportedComposition(model, modelLookup);
         var (baseStruct, baseModelName, propertiesToUse) = GetPropertiesAndBase(model, modelLookup);
+        CppTypeReferenceCollector.EnsureNonRecursive(model, propertiesToUse, enumNames);
         var fields = new List<UPropertyFieldNode>();
-        var skippedProperties = new List<SkippedPropertyComment>();
         foreach (var property in propertiesToUse)
         {
-            if (TypeReferencesModel(property.Type, model.Name, enumNames))
-            {
-                var typeNode = _typeMapper.MapType(property.Type);
-                var propName = _naming.PropertyName(property.Name);
-                var reason = "Unreal Engine does not support recursive types";
-                skippedProperties.Add(new SkippedPropertyComment(propName, typeNode, reason));
-                warnings?.Add($"Model {structName}: skipping recursive property '{property.Name}' ({reason}).");
-                continue;
-            }
             fields.Add(BuildField(property, category));
         }
         var structNode = new UStructDeclarationNode(
             name: new IdentifierNode(structName),
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
-            skippedProperties: skippedProperties,
             baseStruct: baseStruct,
-            documentation: BuildDocumentation(model.Description));
+            documentation: StdDocumentation.Create($"{model.Name} model.", model.Description));
 
         var includes = CollectIncludes(model, fileName, enumNames, propertiesToUse, baseModelName);
 
@@ -77,73 +82,27 @@ public sealed class UEModelAstBuilder
 
     /// <summary>
     /// Определяет, использовать ли наследование C++ для allOf, и возвращает свойства для полей.
-    /// При единственном $ref-базисе — наследование (только собственные свойства).
-    /// Иначе — flatten (объединённые свойства из всех allOf).
+    /// Делегирует общей реализации Core (IrInheritancePlan): одиночный $ref-базис → наследование
+    /// (только собственные свойства), иначе — flatten.
     /// </summary>
     private (IdentifierNode? BaseStruct, string? BaseModelName, IReadOnlyList<IrProperty> Properties) GetPropertiesAndBase(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
     {
-        if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
-            return (null, null, model.Properties);
-
-        // Проверяем, можно ли использовать наследование: ровно один IrModelReference
-        var refBases = model.Composition.Types.OfType<IrModelReference>().ToList();
-        if (refBases.Count == 1 && model.Composition.Types.Count == 1 &&
-            modelLookup.TryGetValue(refBases[0].ModelName, out var baseModel))
-        {
-            var baseStructName = _naming.StructName(baseModel.Name);
-            // Наследование: только собственные поля, без переобъявления унаследованных от базы
-            // (единый резолвер наследования для всех генераторов).
-            var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, modelLookup);
-            return (new IdentifierNode(baseStructName), baseModel.Name, ownProperties);
-        }
-
-        return (null, null, GetEffectiveProperties(model, modelLookup));
+        var plan = IrInheritancePlan.Resolve(model, modelLookup);
+        if (plan.UseInheritance)
+            return (new IdentifierNode(_naming.StructName(plan.BaseModelName!)), plan.BaseModelName, plan.EffectiveProperties);
+        return (null, null, plan.EffectiveProperties);
     }
 
-    /// <summary>
-    /// Возвращает объединённый список свойств (flatten) при allOf с несколькими базами или inline-схемами.
-    /// </summary>
-    private static IReadOnlyList<IrProperty> GetEffectiveProperties(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
-    {
-        if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
-            return model.Properties;
-
-        var byName = new Dictionary<string, IrProperty>(StringComparer.Ordinal);
-        var order = new List<string>();
-
-        foreach (var compType in model.Composition.Types)
-        {
-            if (compType is IrModelReference modelRef && modelLookup.TryGetValue(modelRef.ModelName, out var baseModel))
-            {
-                var baseProps = GetEffectiveProperties(baseModel, modelLookup);
-                foreach (var p in baseProps)
-                {
-                    if (!byName.ContainsKey(p.Name))
-                        order.Add(p.Name);
-                    byName[p.Name] = p;
-                }
-            }
-        }
-
-        foreach (var p in model.Properties)
-        {
-            if (!byName.ContainsKey(p.Name))
-                order.Add(p.Name);
-            byName[p.Name] = p;
-        }
-
-        return order.Select(n => byName[n]).ToList();
-    }
-
-    /// <summary>
-    /// Строит UPropertyFieldNode из IrProperty
-    /// </summary>
+    /// <summary>Builds a documented Unreal field from the property's IR contract.</summary>
+    /// <param name="property">The field's property contract.</param>
+    /// <param name="category">The Unreal Blueprint category.</param>
+    /// <returns>The typed field with a useful Doxygen brief.</returns>
     private UPropertyFieldNode BuildField(IrProperty property, string category)
     {
         var type = _typeMapper.MapType(property.Type);
         var defaultValueStr = _typeMapper.GetDefaultValue(property.Type);
         ExpressionNode? defaultValue = defaultValueStr != null
-            ? new LiteralExpressionNode(defaultValueStr, LiteralKind.String)
+            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
             : null;
 
         return new UPropertyFieldNode(
@@ -151,7 +110,7 @@ public sealed class UEModelAstBuilder
             type: type,
             specifiers: UPropertySpecifiers.ModelField(category),
             defaultValue: defaultValue,
-            documentation: BuildDocumentation(property.Description));
+            documentation: StdDocumentation.Create($"{property.Name} field.", property.Description));
     }
 
     /// <summary>
@@ -193,28 +152,7 @@ public sealed class UEModelAstBuilder
     /// UE не поддерживает рекурсивные типы.
     /// </summary>
     private static bool TypeReferencesModel(IrType type, string modelName, IReadOnlySet<string> enumNames)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                return !enumNames.Contains(modelRef.ModelName) && modelRef.ModelName == modelName;
-            case IrArrayType array:
-                return TypeReferencesModel(array.ElementType, modelName, enumNames);
-            case IrDictionaryType dict:
-                return TypeReferencesModel(dict.KeyType, modelName, enumNames)
-                    || TypeReferencesModel(dict.ValueType, modelName, enumNames);
-            case IrNullableType nullable:
-                return TypeReferencesModel(nullable.InnerType, modelName, enumNames);
-            case IrOptionalType optional:
-                return TypeReferencesModel(optional.InnerType, modelName, enumNames);
-            case IrUnionType union:
-                return union.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
-            case IrIntersectionType intersection:
-                return intersection.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
-            default:
-                return false;
-        }
-    }
+        => CppTypeReferenceCollector.ReferencesModel(type, modelName, enumNames);
 
     /// <summary>
     /// Строит карту «affix-имя ссылки → исходное имя» по типам модели (свойства + composition).
@@ -222,92 +160,19 @@ public sealed class UEModelAstBuilder
     /// При отсутствии affix исходное имя совпадает с affix-именем (карта работает как тождество).
     /// </summary>
     private static Dictionary<string, string> BuildOriginalNameMap(IrModel model, IReadOnlyList<IrProperty> propertiesToUse)
-    {
-        var orig = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [model.Name] = model.OriginalName
-        };
-        foreach (var property in propertiesToUse)
-            CollectOriginalNames(property.Type, orig);
-        if (model.Composition != null)
-            foreach (var t in model.Composition.Types)
-                CollectOriginalNames(t, orig);
-        return orig;
-    }
+        => CppTypeReferenceCollector.BuildOriginalNameMap(model, propertiesToUse);
 
     /// <summary>
     /// Рекурсивно собирает сопоставления «affix-имя ссылки → исходное имя» из IrType.
     /// </summary>
     private static void CollectOriginalNames(IrType type, Dictionary<string, string> orig)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                orig[modelRef.ModelName] = modelRef.OriginalModelName;
-                break;
-            case IrArrayType array:
-                CollectOriginalNames(array.ElementType, orig);
-                break;
-            case IrDictionaryType dict:
-                CollectOriginalNames(dict.KeyType, orig);
-                CollectOriginalNames(dict.ValueType, orig);
-                break;
-            case IrNullableType nullable:
-                CollectOriginalNames(nullable.InnerType, orig);
-                break;
-            case IrOptionalType optional:
-                CollectOriginalNames(optional.InnerType, orig);
-                break;
-            case IrUnionType union:
-                foreach (var t in union.Types) CollectOriginalNames(t, orig);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectOriginalNames(t, orig);
-                break;
-        }
-    }
+        => CppTypeReferenceCollector.CollectOriginalNames(type, orig);
 
     /// <summary>
     /// Рекурсивно собирает ссылки на модели и enum'ы из типа
     /// </summary>
     private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                if (enumNames.Contains(modelRef.ModelName))
-                    enums.Add(modelRef.ModelName);
-                else
-                    models.Add(modelRef.ModelName);
-                break;
-            case IrArrayType array:
-                CollectTypeReferences(array.ElementType, models, enums, enumNames);
-                break;
-            case IrDictionaryType dict:
-                CollectTypeReferences(dict.KeyType, models, enums, enumNames);
-                CollectTypeReferences(dict.ValueType, models, enums, enumNames);
-                break;
-            case IrNullableType nullable:
-                CollectTypeReferences(nullable.InnerType, models, enums, enumNames);
-                break;
-            case IrOptionalType optional:
-                CollectTypeReferences(optional.InnerType, models, enums, enumNames);
-                break;
-            case IrUnionType union:
-                foreach (var t in union.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-        }
-    }
-
-    private CommentNode? BuildDocumentation(string? description)
-    {
-        return !string.IsNullOrWhiteSpace(description)
-            ? new CommentNode(description, CommentKind.MultiLine)
-            : null;
-    }
+        => CppTypeReferenceCollector.Collect(type, models, enums, enumNames);
 
     private CommentNode? BuildCopyrightComment()
     {

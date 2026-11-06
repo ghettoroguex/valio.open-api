@@ -45,8 +45,9 @@ public sealed class TanStackQueryStep : ICodeGenerationStep
         var clientsPath = fileOrg.ClientsPath ?? "api";
         var clientSuffix = TypeScriptClientTransport.ResolveHookClientSuffix(opts);
 
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
+        var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
         var hookBuilder = new TanStackQueryHookAstBuilder(
+            context.DocumentContext,
             _namingConverter,
             astBuilder.BuildType,
             clientSuffix,

@@ -8,10 +8,9 @@
 //   @<owner>/valio               the wrapper; installs the `valio` command
 //   @<owner>/cli-<platform>      one prebuilt binary, gated by os/cpu
 //
-// Names are identical on npmjs.com and GitHub Packages; only the registry
-// differs. The scope has to equal the repository owner because GitHub Packages
-// rejects anything else, and reusing it publicly keeps a package's identity the
-// same wherever it came from.
+// Stable packages use the public npm organization @val.io. Preview packages
+// use @valio-projects because GitHub Packages requires the repository owner as
+// the scope. The runtime reads optionalDependencies so both scopes resolve.
 //
 // What this script stamps per channel: version, registry, the pinned
 // `optionalDependencies` map, the repository URL (GitHub Packages validates it)
@@ -211,8 +210,17 @@ function main() {
   for (const key of required) {
     if (!args[key]) throw new Error(`Missing required flag --${key}.`);
   }
-  if (!args.scope.startsWith("@")) {
-    throw new Error(`--scope must start with '@'; got '${args.scope}'.`);
+  if (!/^@[a-z0-9][a-z0-9._-]*$/.test(args.scope)) {
+    throw new Error(`Invalid npm scope '${args.scope}'.`);
+  }
+  if (args["main-name"] !== `${args.scope}/valio`) {
+    throw new Error("--main-name must be the valio package in --scope.");
+  }
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(args.version)) {
+    throw new Error(`Invalid package version '${args.version}'.`);
+  }
+  if (!["https://registry.npmjs.org", "https://npm.pkg.github.com"].includes(args.registry)) {
+    throw new Error(`Unsupported npm registry '${args.registry}'.`);
   }
 
   const opts = {

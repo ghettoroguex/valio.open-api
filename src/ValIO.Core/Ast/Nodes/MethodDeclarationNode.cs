@@ -54,7 +54,32 @@ public sealed class MethodDeclarationNode : DeclarationNode
     /// Generic параметры типа метода (например, ["T", "U"] для метода Measure&lt;T, U&gt;)
     /// </summary>
     public IReadOnlyList<string>? GenericTypeParameters { get; }
-    
+
+    /// <summary>
+    /// Является ли метод static
+    /// </summary>
+    public bool IsStatic { get; }
+
+    /// <summary>
+    /// Является ли методом virtual (C# virtual / C++ virtual)
+    /// </summary>
+    public bool IsVirtual { get; }
+
+    /// <summary>
+    /// Является ли метод абстрактным (C# abstract / C++ pure virtual «= 0»)
+    /// </summary>
+    public bool IsAbstract { get; }
+
+    /// <summary>
+    /// Является ли метод константным (C++ const member function)
+    /// </summary>
+    public bool IsConst { get; }
+
+    /// <summary>
+    /// Помечен ли метод noexcept (C++)
+    /// </summary>
+    public bool Noexcept { get; }
+
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -89,7 +114,12 @@ public sealed class MethodDeclarationNode : DeclarationNode
         bool isInterfaceMethod = false,
         bool useInheritDoc = false,
         bool isOverride = false,
-        IReadOnlyList<string>? genericTypeParameters = null)
+        IReadOnlyList<string>? genericTypeParameters = null,
+        bool isStatic = false,
+        bool isVirtual = false,
+        bool isAbstract = false,
+        bool isConst = false,
+        bool noexcept = false)
         : base(name, documentation, attributes, metadata)
     {
         ReturnType = returnType;
@@ -101,6 +131,11 @@ public sealed class MethodDeclarationNode : DeclarationNode
         UseInheritDoc = useInheritDoc;
         IsOverride = isOverride;
         GenericTypeParameters = genericTypeParameters?.ToImmutableList();
+        IsStatic = isStatic;
+        IsVirtual = isVirtual;
+        IsAbstract = isAbstract;
+        IsConst = isConst;
+        Noexcept = noexcept;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -123,7 +158,12 @@ public sealed class MethodDeclarationNode : DeclarationNode
             IsInterfaceMethod,
             UseInheritDoc,
             IsOverride,
-            GenericTypeParameters?.ToImmutableList());
+            GenericTypeParameters?.ToImmutableList(),
+            IsStatic,
+            IsVirtual,
+            IsAbstract,
+            IsConst,
+            Noexcept);
     }
     
     public override string ToString()

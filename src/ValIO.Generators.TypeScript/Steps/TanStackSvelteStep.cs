@@ -46,8 +46,8 @@ public sealed class TanStackSvelteStep : ICodeGenerationStep
         var clientsPath = fileOrg.ClientsPath ?? "api";
         var clientSuffix = TypeScriptClientTransport.ResolveHookClientSuffix(opts);
 
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var hookBuilder = new TanStackSvelteHookAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
+        var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
+        var hookBuilder = new TanStackSvelteHookAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
 
         foreach (var client in context.IrDocument.Clients)
         {

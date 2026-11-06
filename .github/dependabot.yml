@@ -26,10 +26,10 @@ updates:
     open-pull-requests-limit: 5
 
   # ---------------------------------------------------------------------------
-  # npm — main shim package.
+  # npm — CLI wrapper build tools.
   # ---------------------------------------------------------------------------
   - package-ecosystem: "npm"
-    directory: "/packaging/npm/valio"
+    directory: "/packaging/npm"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 5

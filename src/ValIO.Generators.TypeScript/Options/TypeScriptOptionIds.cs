@@ -63,7 +63,7 @@ public static class TypeScriptOptionIds
     /// </summary>
     public static class UuidFormat
     {
-        /// <summary>Built-in UUID validator: <c>z.string().uuid()</c> / <c>v.uuid()</c> / <c>{format:"uuid"}</c>.</summary>
+        /// <summary>Canonical hexadecimal UUID text validated consistently across libraries, including nil and max UUID values.</summary>
         public const string Guid = "guid";
 
         /// <summary>Plain string, no UUID refinement.</summary>
@@ -75,8 +75,8 @@ public static class TypeScriptOptionIds
         /// <summary>Default when none is configured (backward-compatible).</summary>
         public const string Default = Guid;
 
-        /// <summary>Format-only UUID regex source (no version/variant enforcement).</summary>
-        public const string Pattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+        /// <summary>Format-only UUID regex source with strict end-of-input matching and no version or variant enforcement.</summary>
+        public const string Pattern = @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![\s\S])";
 
         /// <summary>Name of the generated constant file (under the schemas folder) and its exports.</summary>
         public const string ConstFileName = "formats";

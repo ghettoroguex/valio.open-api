@@ -37,8 +37,8 @@ public sealed class TypeScriptParamsStep : ICodeGenerationStep
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, astBuilder.BuildType);
+        var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
+        var paramsBuilder = new TypeScriptParamsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType);
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 

@@ -52,11 +52,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
-  <!-- Source Link providers (added to every project; auto-disabled when not packing) -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
-  </ItemGroup>
-
   <!-- Include README.md in packed nupkgs -->
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />

@@ -34,7 +34,7 @@ public sealed class TypeScriptEnumsStep : ICodeGenerationStep
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var builder = new TypeScriptAstBuilder(_namingConverter, opts);
+        var builder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
 

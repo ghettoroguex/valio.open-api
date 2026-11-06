@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -20,8 +20,13 @@ public class IrBuilder
     private readonly ISchemaResolver _schemaResolver;
     private readonly INamingConverter _namingConverter;
     
-    // Словарь для хранения созданных inline моделей
+    /// <summary>Stores inline declarations allocated for the current source document.</summary>
     private readonly Dictionary<string, IrModel> _inlineModels = new();
+
+    /// <summary>Reserves declared and inline type names before recursive inline model construction.</summary>
+    private readonly HashSet<string> _allocatedTypeNames = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Supplies deterministic fallback names for inline schemas without a property context.</summary>
     private int _inlineModelCounter = 0;
 
     // Диагностический контекст текущей точки построения типа (endpoint / роль / путь свойства).
@@ -35,16 +40,14 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Строит IR из OpenAPI документа
+    /// Builds a language-independent IR and its dependency graph from an OpenAPI document.
     /// </summary>
-    /// <param name="document">OpenAPI документ</param>
-    /// <param name="warnings">Опциональная коллекция для записи предупреждений (дубликаты параметров и т.д.)</param>
-    /// <param name="affixOptions">
-    /// Опциональные prefix/suffix для имён моделей/методов/enum'ов. Применяются на уровне IR
-    /// (см. <see cref="IrNameAffixer"/>) до построения графа зависимостей, поэтому распространяются
-    /// на все определения, ссылки и импорты во всех языках. По умолчанию (null или <see cref="NameAffixOptions.IsNoOp"/>)
-    /// преобразование пропускается и поведение идентично прежнему.
-    /// </param>
+    /// <param name="document">The source OpenAPI document.</param>
+    /// <param name="warnings">An optional diagnostic sink; omitting it does not change the IR.</param>
+    /// <param name="affixOptions">Optional name affixes applied before dependency extraction.</param>
+    /// <returns>The complete IR, including inline models and type dependencies.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Distinct component schemas produce the same sanitized IR name.</exception>
     public IrDocument BuildFromOpenApi(
         OpenApiDocument document,
         ICollection<string>? warnings = null,
@@ -53,26 +56,27 @@ public class IrBuilder
         if (document == null)
             throw new ArgumentNullException(nameof(document));
 
-        // Очищаем словарь inline моделей перед началом
+        // Reset per-document inline models before reusing the builder.
         _inlineModels.Clear();
+        _allocatedTypeNames.Clear();
         _inlineModelCounter = 0;
+        ReserveDeclaredTypeNames(document);
 
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
         var clients = ExtractClients(document, warnings);
 
-        // Добавляем inline модели к основным моделям
+        // Inline models are declarations and participate in dependency ordering.
         IReadOnlyList<IrModel> allModels = models.Concat(_inlineModels.Values).ToList();
         IReadOnlyList<IrEnum> allEnums = enums;
         IReadOnlyList<IrClient> allClients = clients;
 
-        // Применяем affix (prefix/suffix) к именам ДО построения графа зависимостей,
-        // чтобы граф и все ссылки оперировали уже переименованными именами.
+        // Rename declarations and references before building their dependency graph.
         if (affixOptions is { IsNoOp: false })
             (allModels, allEnums, allClients) =
                 IrNameAffixer.Apply(allModels, allEnums, allClients, affixOptions, _namingConverter);
 
-        var typeDependencies = BuildTypeDependencyGraph(allModels, allEnums, allClients);
+        var typeDependencies = new IrTypeDependencyGraphBuilder().Build(allModels, allEnums);
 
         return new IrDocument
         {
@@ -82,6 +86,27 @@ public class IrBuilder
             Clients = allClients,
             TypeDependencies = typeDependencies
         };
+    }
+
+    /// <summary>Reserves component names and rejects ambiguous sanitized declarations before constructing any IR.</summary>
+    /// <param name="document">The document containing component schema declarations.</param>
+    /// <exception cref="InvalidOperationException">Two component names sanitize to the same IR identifier.</exception>
+    private void ReserveDeclaredTypeNames(OpenApiDocument document)
+    {
+        if (document.Components?.Schemas == null)
+            return;
+
+        var originalNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in document.Components.Schemas.Keys)
+        {
+            var sanitizedName = _namingConverter.SanitizeIdentifier(name);
+            if (originalNames.TryGetValue(sanitizedName, out var existingName))
+                throw new InvalidOperationException(
+                    $"Component schemas '{existingName}' and '{name}' produce the same sanitized IR type name '{sanitizedName}'. Rename one component to preserve distinct type identities.");
+
+            originalNames.Add(sanitizedName, name);
+            _allocatedTypeNames.Add(_namingConverter.ToPascalCase(sanitizedName));
+        }
     }
     
     /// <summary>
@@ -340,32 +365,37 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Извлекает ограничения из схемы
+    /// Extracts validation bounds independently of the process culture.
     /// </summary>
-    private IrPropertyConstraints? ExtractConstraints(IOpenApiSchema schema)
+    /// <param name="schema">The schema declaring constraints.</param>
+    /// <param name="includeDefault">Whether to include a default value for property or parameter initialization.</param>
+    /// <returns>The declared constraints, or null when none are present.</returns>
+    private IrPropertyConstraints? ExtractConstraints(IOpenApiSchema schema, bool includeDefault = true)
     {
         var hasConstraints = !string.IsNullOrEmpty(schema.Minimum) ||
                             !string.IsNullOrEmpty(schema.Maximum) ||
+                            !string.IsNullOrEmpty(schema.ExclusiveMinimum) ||
+                            !string.IsNullOrEmpty(schema.ExclusiveMaximum) ||
                             schema.MinLength.HasValue ||
                             schema.MaxLength.HasValue ||
                             !string.IsNullOrEmpty(schema.Pattern) ||
-                            schema.Default != null;
+                            (includeDefault && schema.Default != null);
         
         if (!hasConstraints)
             return null;
         
         decimal? min = null;
         decimal? max = null;
-        if (decimal.TryParse(schema.Minimum, out var parsedMin))
+        if (decimal.TryParse(schema.Minimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMin))
             min = parsedMin;
-        if (decimal.TryParse(schema.Maximum, out var parsedMax))
+        if (decimal.TryParse(schema.Maximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMax))
             max = parsedMax;
         
         decimal? exclusiveMin = null;
         decimal? exclusiveMax = null;
-        if (decimal.TryParse(schema.ExclusiveMinimum, out var parsedExclusiveMin))
+        if (decimal.TryParse(schema.ExclusiveMinimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMin))
             exclusiveMin = parsedExclusiveMin;
-        if (decimal.TryParse(schema.ExclusiveMaximum, out var parsedExclusiveMax))
+        if (decimal.TryParse(schema.ExclusiveMaximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMax))
             exclusiveMax = parsedExclusiveMax;
         
         return new IrPropertyConstraints
@@ -377,7 +407,7 @@ public class IrBuilder
             MinLength = schema.MinLength,
             MaxLength = schema.MaxLength,
             Pattern = schema.Pattern,
-            DefaultValue = ExtractDefaultValue(schema.Default)
+            DefaultValue = includeDefault ? ExtractDefaultValue(schema.Default) : null
         };
     }
     
@@ -400,30 +430,37 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Извлекает композицию из схемы
+    /// Extracts model composition without duplicating inline-owned properties or discarding nested alternatives.
     /// </summary>
+    /// <param name="schema">The schema declaring the model composition.</param>
+    /// <param name="document">The document containing referenced declarations.</param>
+    /// <param name="propertyContext">Optional inline model naming information.</param>
+    /// <returns>The model composition, or null when all members are represented by owned properties.</returns>
     private IrComposition? ExtractComposition(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext = null)
     {
         if (schema.AllOf?.Count > 0)
         {
-            // Для allOf композиция модели описывает НАСЛЕДОВАНИЕ: в Types кладём только
-            // $ref-базовые классы. Свойства inline-членов уже извлечены в Properties
-            // (см. BuildModel), поэтому inline-члены сюда не попадают — это убирает
-            // дублирование свойств и исключает появление «осиротевших» inline-моделей.
-            var baseRefs = schema.AllOf
-                .Where(s => !string.IsNullOrEmpty(GetSchemaNameRaw(s)))
-                .Select(s => BuildType(s, document, propertyContext))
-                .OfType<IrModelReference>()
-                .DistinctBy(r => r.ModelName)
-                .ToList<IrType>();
+            // Plain inline object members already contribute owned properties in BuildModel.
+            // Explicit nested compositions remain type members because their alternatives are semantic boundaries.
+            var compositionTypes = new List<IrType>();
+            foreach (var member in schema.AllOf)
+            {
+                if (string.IsNullOrEmpty(GetSchemaNameRaw(member)) &&
+                    member.AllOf?.Count is not > 0 && member.OneOf?.Count is not > 0 && member.AnyOf?.Count is not > 0)
+                    continue;
 
-            if (baseRefs.Count == 0)
+                var type = BuildType(member, document, propertyContext);
+                if (!compositionTypes.Any(existing => IrTypeComparer.AreSemanticallyEqual(existing, type, ignorePresence: false)))
+                    compositionTypes.Add(type);
+            }
+
+            if (compositionTypes.Count == 0)
                 return null;
 
             return new IrComposition
             {
                 Kind = IrCompositionKind.AllOf,
-                Types = baseRefs
+                Types = compositionTypes
             };
         }
         
@@ -435,9 +472,7 @@ public class IrBuilder
                 Kind = IrCompositionKind.OneOf,
                 Types = types,
                 DiscriminatorPropertyName = schema.Discriminator?.PropertyName,
-                // Значение mapping — это $ref на схему-вариант. Берём id ссылки
-                // (kvp.Value.Reference.Id, напр. "Dog"), а не Target?.Id (который пуст
-                // для безымянных схем), и санитизируем под имена IR-моделей.
+                // Mapping values refer to component IDs, which must follow IR declaration sanitization.
                 DiscriminatorMapping = schema.Discriminator?.Mapping?.ToDictionary(
                     kvp => kvp.Key,
                     kvp => _namingConverter.SanitizeIdentifier(kvp.Value?.Reference?.Id ?? string.Empty)
@@ -459,15 +494,49 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Строит тип из схемы (рекурсивно)
+    /// Recursively translates a schema into an IR type, allocating inline declarations when needed.
     /// </summary>
+    /// <param name="schema">The schema to translate.</param>
+    /// <param name="document">The document containing referenced definitions.</param>
+    /// <param name="propertyContext">Optional contextual information for inline names.</param>
+    /// <returns>The translated type.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="schema"/> or <paramref name="document"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The schema cannot be translated into a supported IR type.</exception>
     private IrType BuildType(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext = null)
     {
-        if (schema == null)
-            throw new ArgumentNullException(nameof(schema));
-        if (document == null)
-            throw new ArgumentNullException(nameof(document));
-        
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(document);
+
+        var type = BuildTypeCore(schema, document, propertyContext);
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder &&
+            !string.IsNullOrEmpty(referenceHolder.Reference?.Id))
+            return type;
+
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        if ((type is IrArrayType or IrDictionaryType or IrModelReference) && SchemaAllowsJsonNull(resolvedSchema))
+            type = IrCompositionNormalizer.WrapNullable(type);
+
+        // Defaults belong to property and parameter initialization, never to alternative match predicates.
+        var constraints = ExtractConstraints(resolvedSchema, includeDefault: false);
+        if (constraints == null)
+            return type;
+
+        var constrained = type with { Constraints = constraints };
+        if (type.Constraints == null || type.Constraints == constraints)
+            return constrained;
+
+        // A collapsed child and its enclosing schema contribute independent conjunctive predicates.
+        return new IrIntersectionType { Types = [type, constrained] };
+    }
+
+    /// <summary>Builds the structural type while recursive child translations retain their own validation metadata.</summary>
+    /// <param name="schema">The schema whose structure is being translated.</param>
+    /// <param name="document">The document containing referenced declarations.</param>
+    /// <param name="propertyContext">Optional inline model naming information.</param>
+    /// <returns>The structural type before attaching this schema's validation metadata.</returns>
+    /// <exception cref="InvalidOperationException">The schema has no supported structural translation.</exception>
+    private IrType BuildTypeCore(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext)
+    {
         // СНАЧАЛА проверяем ссылки ДО разрешения (после разрешения информация о ссылке теряется)
         if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
@@ -485,17 +554,20 @@ public class IrBuilder
         if (resolvedSchema == null)
             throw new InvalidOperationException($"Schema resolver returned null schema — at {_ctx.Describe()}");
         
-        // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type).
-        // Нормализуем: чистые null-ветки ({type:null}) превращаем в nullable-обёртку, а не в член union;
-        // одиночный/пустой union схлопывается (см. IrCompositionNormalizer).
+        // Lift null only when doing so preserves the exclusive alternative match count.
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
         {
-            var variants = (resolvedSchema.OneOf ?? resolvedSchema.AnyOf)!;
+            var kind = resolvedSchema.OneOf?.Count > 0 ? IrUnionKind.OneOf : IrUnionKind.AnyOf;
+            var variants = kind == IrUnionKind.OneOf ? resolvedSchema.OneOf! : resolvedSchema.AnyOf!;
             var nullable = SchemaAllowsJsonNull(resolvedSchema);
+            var nullCount = variants.Count(OpenApiNullability.IsNullOnly);
+            var liftNull = kind == IrUnionKind.AnyOf ||
+                nullCount == 1 && variants.Where(variant => !OpenApiNullability.IsNullOnly(variant))
+                    .All(variant => OpenApiNullability.RejectsNull(variant, document));
             var members = new List<IrType>(variants.Count);
             foreach (var variant in variants)
             {
-                if (IsNullOnlySchema(variant))
+                if (liftNull && OpenApiNullability.IsNullOnly(variant))
                 {
                     nullable = true;
                     continue;
@@ -504,7 +576,10 @@ public class IrBuilder
                 members.Add(BuildType(variant, document, propertyContext));
             }
 
-            return IrCompositionNormalizer.NormalizeUnion(members, nullable);
+            // An all-null inclusive union (or a single exclusive null branch) accepts only null.
+            if (members.Count == 0 && nullable)
+                return new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Null };
+            return IrCompositionNormalizer.NormalizeUnion(members, nullable, kind);
         }
 
         // AllOf -> Intersection (проверяем до проверки Type). Нормализуем: single-element allOf
@@ -544,7 +619,7 @@ public class IrBuilder
                 // Создаем inline модель с правильным именем на основе контекста
                 var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
                 var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
-                _inlineModels[inlineModelName] = inlineModel;
+                _inlineModels.Add(inlineModelName, inlineModel);
                 return new IrModelReference { ModelName = inlineModelName };
             }
             
@@ -569,10 +644,7 @@ public class IrBuilder
         if (IsSingleNonNullPrimitive(resolvedSchema))
         {
             var core = resolvedSchema.Type!.Value & ~JsonSchemaType.Null;
-            return new IrPrimitiveType
-            {
-                PrimitiveKind = MapPrimitive(core, resolvedSchema.Format)
-            };
+            return BuildPrimitiveType(core, resolvedSchema.Format);
         }
 
         // OpenAPI 3.1 «только null» ({"type":"null"}) как самостоятельный тип — например конверт
@@ -622,7 +694,7 @@ public class IrBuilder
                 // Это inline объект - создаем для него модель с правильным именем на основе контекста
                 var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
                 var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
-                _inlineModels[inlineModelName] = inlineModel;
+                _inlineModels.Add(inlineModelName, inlineModel);
                 return new IrModelReference { ModelName = inlineModelName };
             }
             
@@ -636,44 +708,11 @@ public class IrBuilder
         throw new InvalidOperationException($"Unknown schema type: {typeStr} — at {_ctx.Describe()}");
     }
     
-    /// <summary>
-    /// Схема допускает JSON null: type содержит Null или legacy nullable: true.
-    /// </summary>
+    /// <summary>Reads explicit type and legacy OpenAPI nullable annotations.</summary>
+    /// <param name="schema">The schema whose annotations are inspected.</param>
+    /// <returns>Whether an explicit annotation allows JSON null.</returns>
     private static bool SchemaAllowsJsonNull(IOpenApiSchema schema)
-    {
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Null))
-            return true;
-        
-        if (schema.Extensions != null &&
-            schema.Extensions.TryGetValue(OpenApiConstants.NullableExtension, out var nullableExtension) &&
-            nullableExtension is JsonNodeExtension { Node: { } jsonNode } &&
-            jsonNode.GetValueKind() == JsonValueKind.True)
-            return true;
-
-        return false;
-    }
-
-    /// <summary>
-    /// Схема представляет «только null» (OpenAPI 3.1 <c>{"type":"null"}</c>) — без других
-    /// примитивов, объекта/массива, композиции, $ref или enum. Такая ветка в oneOf/anyOf
-    /// означает nullable, а не отдельный член union.
-    /// </summary>
-    private static bool IsNullOnlySchema(IOpenApiSchema schema)
-    {
-        if (!schema.Type.HasValue || schema.Type.Value != JsonSchemaType.Null)
-            return false;
-
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> { Reference.Id.Length: > 0 })
-            return false;
-
-        if (schema.AllOf?.Count > 0 || schema.OneOf?.Count > 0 || schema.AnyOf?.Count > 0)
-            return false;
-
-        if (schema.Properties?.Count > 0 || (schema.Enum?.Count > 0))
-            return false;
-
-        return true;
-    }
+        => OpenApiNullability.HasExplicitNullAllowance(schema);
     
     /// <summary>
     /// Ровно один примитивный вид (без Null в флаге), без Object/Array.
@@ -700,9 +739,9 @@ public class IrBuilder
                prim == JsonSchemaType.Boolean;
     }
     
-    /// <summary>
-    /// Несколько примитивных типов в одном type, и/или null + примитив(ы).
-    /// </summary>
+    /// <summary>Builds primitive type arrays while retaining nullability and member-specific format metadata.</summary>
+    /// <param name="schema">The scalar schema with one or more JSON Schema type flags.</param>
+    /// <returns>The scalar or composed type, or null when a different structural branch should handle the schema.</returns>
     private IrType? TryBuildCompositePrimitiveType(IOpenApiSchema schema)
     {
         if (!schema.Type.HasValue)
@@ -739,23 +778,21 @@ public class IrBuilder
             if (!hasNull)
                 return null;
             
-            var kind = MapPrimitive(flags[0], ResolveFormatForUnionMember(schema, flags[0]));
-            return new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = kind } };
+            return new IrNullableType { InnerType = BuildPrimitiveType(flags[0], ResolveFormatForUnionMember(schema, flags[0])) };
         }
         
         // string + другие примитивы: строка как сериализация (число, bool, дата…). Сначала format, затем нес-string типы.
         if (IsStringCoercionPrimitiveUnion(flags))
         {
             var kind = ResolveStringCoercionUnionPrimitiveKind(schema, flags);
-            IrType inner = new IrPrimitiveType { PrimitiveKind = kind };
+            IrType inner = new IrPrimitiveType { PrimitiveKind = kind, Format = NormalizePrimitiveFormat(schema.Format) };
             return hasNull ? new IrNullableType { InnerType = inner } : inner;
         }
         
         var unionMembers = new List<IrType>(flags.Count);
         foreach (var flag in flags)
         {
-            var kind = MapPrimitive(flag, ResolveFormatForUnionMember(schema, flag));
-            unionMembers.Add(new IrPrimitiveType { PrimitiveKind = kind });
+            unionMembers.Add(BuildPrimitiveType(flag, ResolveFormatForUnionMember(schema, flag)));
         }
         
         IrType result = new IrUnionType { Types = unionMembers };
@@ -934,38 +971,33 @@ public class IrBuilder
         return parent.Format;
     }
     
-    /// <summary>
-    /// Проверяет, есть ли в схеме хотя бы одно required свойство
-    /// </summary>
-    private bool HasRequiredPropertiesInSchema(IOpenApiSchema schema, OpenApiDocument document)
+    /// <summary>Builds a scalar type without losing its format annotation during kind selection.</summary>
+    /// <param name="type">The scalar JSON Schema type.</param>
+    /// <param name="format">The optional scalar format annotation.</param>
+    /// <returns>The primitive kind together with its retained normalized format.</returns>
+    private IrPrimitiveType BuildPrimitiveType(JsonSchemaType type, string? format) => new()
     {
-        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-        
-        // Если в схеме есть Required и в нем есть хотя бы одно свойство
-        if (resolvedSchema.Required != null && resolvedSchema.Required.Count > 0)
-        {
-            return true;
-        }
-        
-        // Также проверяем allOf - если в какой-то из базовых схем есть required свойства
-        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
-        {
-            foreach (var allOfSchema in resolvedSchema.AllOf)
-            {
-                var resolvedAllOfSchema = _schemaResolver.ResolveSchema(allOfSchema);
-                if (resolvedAllOfSchema.Required != null && resolvedAllOfSchema.Required.Count > 0)
-                {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
+        PrimitiveKind = MapPrimitive(type, format),
+        Format = NormalizePrimitiveFormat(format),
+    };
+
+    /// <summary>Normalizes recognized formats while preserving case-sensitive custom identifiers.</summary>
+    /// <param name="format">The original schema format annotation.</param>
+    /// <returns>The normalized known format, verbatim custom format, or null for an empty annotation.</returns>
+    private static string? NormalizePrimitiveFormat(string? format)
+    {
+        if (string.IsNullOrWhiteSpace(format))
+            return null;
+        var normalized = format.Trim().ToLowerInvariant();
+        return TryMapSchemaFormatToPrimitiveKind(normalized, out _) || normalized is "duration" or "time-span" or "timespan"
+            ? normalized
+            : format;
     }
-    
-    /// <summary>
-    /// Маппит примитивный тип OpenAPI в IrPrimitiveKind
-    /// </summary>
+
+    /// <summary>Maps a scalar schema representation and compatible format to its language-independent kind.</summary>
+    /// <param name="type">The scalar JSON Schema type, or an unspecified type.</param>
+    /// <param name="format">The optional source format used for scalar representation selection.</param>
+    /// <returns>The primitive IR representation without applying a language backend.</returns>
     private IrPrimitiveKind MapPrimitive(JsonSchemaType? type, string? format)
     {
         if (!type.HasValue)
@@ -1164,8 +1196,15 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Строит IrOperation из OpenAPI операции
+    /// Builds an HTTP operation with wire identities preserved across parameter locations.
     /// </summary>
+    /// <param name="path">The original path template.</param>
+    /// <param name="httpMethod">The operation's HTTP method.</param>
+    /// <param name="pathItem">The path item declaring shared parameters.</param>
+    /// <param name="openApiOperation">The operation-specific declarations.</param>
+    /// <param name="document">The document used to resolve referenced schemas.</param>
+    /// <param name="warnings">An optional diagnostic sink.</param>
+    /// <returns>The operation and its generated parameter identifiers.</returns>
     private IrOperation BuildOperation(
         string path,
         HttpMethod httpMethod,
@@ -1175,11 +1214,10 @@ public class IrBuilder
         ICollection<string>? warnings = null)
     {
         var operationId = openApiOperation.OperationId ?? 
-            $"{httpMethod.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
+            $"{httpMethod.Method.ToLowerInvariant()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
         var methodName = _namingConverter.SanitizeIdentifier(operationId);
 
-        // Базовый диагностический контекст операции (endpoint + operationId). Под-точки построения
-        // (параметры / тело / ответы) уточняют роль через WithContext, восстанавливая этот контекст.
+        // Parameter, body, and response diagnostics refine the operation context through WithContext.
         _ctx = new SchemaBuildContext
         {
             HttpMethod = httpMethod.Method.ToUpperInvariant(),
@@ -1187,8 +1225,8 @@ public class IrBuilder
             OperationId = operationId
         };
 
-        // Извлекаем параметры: объединяем path-level и operation-level (operation переопределяет path)
-        var effectiveParameters = GetEffectiveParameters(pathItem, openApiOperation);
+        // Operation-level parameters override path-level declarations with the same wire identity.
+        var effectiveParameters = GetEffectiveParameters(pathItem, openApiOperation, methodName, warnings);
         var pathParameters = new List<IrParameter>();
         var queryParameters = new List<IrParameter>();
         var headerParameters = new List<IrParameter>();
@@ -1219,20 +1257,19 @@ public class IrBuilder
                 }
         }
 
-        ValidateAndDeduplicateParameters(methodName, pathParameters, queryParameters, warnings);
+        EnsureUniqueParameterNames(methodName, [pathParameters, queryParameters, headerParameters], warnings);
 
-        // Порядок path-параметров в OpenAPI может отличаться от порядка плейсхолдеров в path.
-        // Для Printf и аналогов аргументы должны идти в порядке {paramName} в path.
+        // Positional path formatters require parameters in the template's placeholder order.
         ReorderPathParametersToMatchPath(pathParameters, path);
         
-        // Извлекаем request body (передаем operationId для генерации FormModel)
+        // Pass the operation ID to preserve contextual form model names.
         IrRequestBody? requestBody = null;
         if (openApiOperation.RequestBody != null)
         {
             requestBody = BuildRequestBody(openApiOperation.RequestBody, document, operationId);
         }
         
-        // Извлекаем responses
+        // Preserve every response status and its payload type.
         var responses = new List<IrResponse>();
         if (openApiOperation.Responses != null)
         {
@@ -1269,135 +1306,138 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Объединяет параметры Path Item и Operation. Параметры операции переопределяют path-level (по name+location).
+    /// Merges path-level and operation-level parameters by wire location and name.
     /// </summary>
-    private static IReadOnlyList<IOpenApiParameter> GetEffectiveParameters(IOpenApiPathItem pathItem, OpenApiOperation openApiOperation)
+    /// <remarks>Only HTTP header names are case-insensitive. Operation parameters override path-level entries.</remarks>
+    /// <param name="pathItem">The source path item.</param>
+    /// <param name="openApiOperation">The operation providing overrides.</param>
+    /// <param name="methodName">The generated method name used in diagnostics.</param>
+    /// <param name="warnings">An optional sink for duplicate declaration diagnostics.</param>
+    /// <returns>One effective parameter per wire identity, in declaration order.</returns>
+    private static IReadOnlyList<IOpenApiParameter> GetEffectiveParameters(
+        IOpenApiPathItem pathItem,
+        OpenApiOperation openApiOperation,
+        string methodName,
+        ICollection<string>? warnings)
     {
-        var byKey = new Dictionary<string, IOpenApiParameter>(StringComparer.OrdinalIgnoreCase);
-        string Key(IOpenApiParameter p) => $"{p.In}:{p.Name}";
-
-        if (pathItem.Parameters != null)
-            foreach (var p in pathItem.Parameters)
-                if (p.Name != null && p.In.HasValue)
-                    byKey[Key(p)] = p;
-
-        if (openApiOperation.Parameters != null)
-            foreach (var p in openApiOperation.Parameters)
-                if (p.Name != null && p.In.HasValue)
-                    byKey[Key(p)] = p;
-
+        var byKey = new Dictionary<(ParameterLocation Location, string Name), IOpenApiParameter>();
+        MergeParameterScope(pathItem.Parameters, byKey, methodName, warnings);
+        MergeParameterScope(openApiOperation.Parameters, byKey, methodName, warnings);
         return byKey.Values.ToList();
     }
 
     /// <summary>
-    /// Извлекает имена path-параметров из шаблона пути в порядке их появления.
-    /// Например: "/api/projects/{projectId}/plans/{planId}" → ["projectId", "planId"].
+    /// Adds one declaration scope while diagnosing repeated wire identities within that scope.
     /// </summary>
+    /// <param name="parameters">The parameter declarations in one scope.</param>
+    /// <param name="destination">The merged parameters, updated with later declarations.</param>
+    /// <param name="methodName">The generated method name used in diagnostics.</param>
+    /// <param name="warnings">An optional diagnostic sink.</param>
+    private static void MergeParameterScope(
+        IEnumerable<IOpenApiParameter>? parameters,
+        Dictionary<(ParameterLocation Location, string Name), IOpenApiParameter> destination,
+        string methodName,
+        ICollection<string>? warnings)
+    {
+        if (parameters == null)
+            return;
+
+        var seen = new HashSet<(ParameterLocation Location, string Name)>();
+        foreach (var parameter in parameters)
+        {
+            if (parameter.Name == null || !parameter.In.HasValue)
+                continue;
+
+            var location = parameter.In.Value;
+            var name = location == ParameterLocation.Header ? parameter.Name.ToUpperInvariant() : parameter.Name;
+            var key = (location, name);
+            if (!seen.Add(key))
+                warnings?.Add($"Operation {methodName}: duplicate {location.ToString().ToLowerInvariant()} parameter '{parameter.Name}' (keeping last declaration).");
+
+            destination[key] = parameter;
+        }
+    }
+
+    /// <summary>
+    /// Extracts wire names from a path template in placeholder order.
+    /// </summary>
+    /// <param name="path">The path template containing brace-delimited placeholders.</param>
+    /// <returns>The placeholder names in their original case.</returns>
     private static IReadOnlyList<string> ExtractPathParameterNamesInOrder(string path)
     {
         var matches = PathParamRegex.Matches(path);
         var result = new List<string>(matches.Count);
-        foreach (Match m in matches)
+        foreach (Match match in matches)
         {
-            if (m.Success && m.Groups.Count > 1)
-                result.Add(m.Groups[1].Value);
+            if (match.Success && match.Groups.Count > 1)
+                result.Add(match.Groups[1].Value);
         }
         return result;
     }
 
+    /// <summary>Matches brace-delimited OpenAPI path parameter names.</summary>
     private static readonly Regex PathParamRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
 
     /// <summary>
-    /// Переупорядочивает path-параметры в соответствии с порядком плейсхолдеров в path.
-    /// Это необходимо для корректной передачи аргументов в Printf и аналогичные функции.
+    /// Orders parameters by their original wire names so positional path formatting stays correct.
     /// </summary>
+    /// <param name="pathParameters">The parameters to reorder in place.</param>
+    /// <param name="path">The source path template.</param>
     private static void ReorderPathParametersToMatchPath(List<IrParameter> pathParameters, string path)
     {
-        if (pathParameters.Count == 0) return;
+        if (pathParameters.Count == 0)
+            return;
 
         var pathOrder = ExtractPathParameterNamesInOrder(path);
-        if (pathOrder.Count == 0) return;
+        if (pathOrder.Count == 0)
+            return;
 
-        var byName = pathParameters.ToDictionary(p => p.Name, p => p, StringComparer.OrdinalIgnoreCase);
+        var byName = pathParameters.ToDictionary(parameter => parameter.OriginalName, StringComparer.Ordinal);
         var reordered = new List<IrParameter>(pathParameters.Count);
         foreach (var name in pathOrder)
         {
-            if (byName.TryGetValue(name, out var param))
-            {
-                reordered.Add(param);
-                byName.Remove(name);
-            }
+            if (byName.Remove(name, out var parameter))
+                reordered.Add(parameter);
         }
-        // Параметры из spec, которых нет в path (edge case) — добавляем в конец
-        foreach (var param in byName.Values)
-            reordered.Add(param);
 
+        // Invalid declarations absent from the template remain visible to downstream diagnostics.
+        reordered.AddRange(byName.Values);
         pathParameters.Clear();
         pathParameters.AddRange(reordered);
     }
 
     /// <summary>
-    /// Проверяет уникальность параметров и выводит предупреждения о дубликатах.
-    /// Удаляет дубликаты: при пересечении path/query по имени — оставляет path, удаляет query.
+    /// Allocates distinct source identifiers without discarding distinct wire parameters.
     /// </summary>
-    private static void ValidateAndDeduplicateParameters(
+    /// <remarks>
+    /// Casing and separator conversion can merge otherwise distinct identifiers in generators.
+    /// Reserve their camel-case equivalents across locations and append a deterministic suffix on collision.
+    /// The original wire names always remain unchanged.
+    /// </remarks>
+    /// <param name="methodName">The generated method name used in diagnostics.</param>
+    /// <param name="parameterGroups">The path, query, and header groups in allocation order.</param>
+    /// <param name="warnings">An optional diagnostic sink; allocation is independent of its presence.</param>
+    private void EnsureUniqueParameterNames(
         string methodName,
-        List<IrParameter> pathParameters,
-        List<IrParameter> queryParameters,
+        IReadOnlyList<List<IrParameter>> parameterGroups,
         ICollection<string>? warnings)
     {
-        if (warnings == null) return;
-
-        // Дубликаты внутри path — оставляем первое вхождение
-        var pathNames = new Dictionary<string, (IrParameter Param, int Index)>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < pathParameters.Count; i++)
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var parameters in parameterGroups)
         {
-            var p = pathParameters[i];
-            if (pathNames.TryGetValue(p.Name, out var existing))
+            for (var index = 0; index < parameters.Count; index++)
             {
-                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(p.Type, existing.Param.Type);
-                var msg = typesDiffer
-                    ? $"Operation {methodName}: duplicate path parameter '{p.Name}' with different types (keeping first, removing duplicate)."
-                    : $"Operation {methodName}: duplicate path parameter '{p.Name}' (keeping first, removing duplicate).";
-                warnings.Add(msg);
-                pathParameters.RemoveAt(i);
-                i--;
-            }
-            else
-                pathNames[p.Name] = (p, i);
-        }
+                var parameter = parameters[index];
+                var name = parameter.Name;
+                var suffix = 2;
+                while (!names.Add(_namingConverter.ToCamelCase(name)))
+                    name = parameter.Name + (suffix++).ToString(CultureInfo.InvariantCulture);
 
-        // Дубликаты внутри query — оставляем первое вхождение
-        var queryNames = new Dictionary<string, (IrParameter Param, int Index)>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < queryParameters.Count; i++)
-        {
-            var p = queryParameters[i];
-            if (queryNames.TryGetValue(p.Name, out var existing))
-            {
-                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(p.Type, existing.Param.Type);
-                var msg = typesDiffer
-                    ? $"Operation {methodName}: duplicate query parameter '{p.Name}' with different types (keeping first, removing duplicate)."
-                    : $"Operation {methodName}: duplicate query parameter '{p.Name}' (keeping first, removing duplicate).";
-                warnings.Add(msg);
-                queryParameters.RemoveAt(i);
-                i--;
-            }
-            else
-                queryNames[p.Name] = (p, i);
-        }
-
-        // Пересечение path и query — оставляем path, удаляем из query
-        foreach (var pathName in pathNames.Keys.ToList())
-        {
-            if (queryNames.TryGetValue(pathName, out var queryParam))
-            {
-                var pathParam = pathNames[pathName].Param;
-                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(pathParam.Type, queryParam.Param.Type);
-                var msg = typesDiffer
-                    ? $"Operation {methodName}: parameter '{pathName}' exists in both path and query with different types (keeping path parameter, removing from query)."
-                    : $"Operation {methodName}: parameter '{pathName}' exists in both path and query (keeping path parameter, removing from query).";
-                warnings.Add(msg);
-                queryParameters.RemoveAll(q => string.Equals(q.Name, pathName, StringComparison.OrdinalIgnoreCase));
+                if (name != parameter.Name)
+                {
+                    parameters[index] = parameter with { Name = name };
+                    warnings?.Add($"Operation {methodName}: parameter '{parameter.OriginalName}' uses identifier '{name}' to avoid a generated name collision.");
+                }
             }
         }
     }
@@ -1421,8 +1461,12 @@ public class IrBuilder
     }
 
     /// <summary>
-    /// Строит IrParameter из OpenAPI параметра
+    /// Builds a parameter contract preserving its wire identity, schema constraints, and normalized serialization metadata.
     /// </summary>
+    /// <param name="parameter">The source parameter, including location-specific style and explode defaults.</param>
+    /// <param name="document">The document used to resolve referenced parameter schemas.</param>
+    /// <returns>The language-independent parameter contract.</returns>
+    /// <exception cref="InvalidOperationException">The reader supplies an unrecognized serialization style.</exception>
     private IrParameter BuildParameter(IOpenApiParameter parameter, OpenApiDocument document)
     {
         var name = _namingConverter.SanitizeIdentifier(parameter.Name ?? "param");
@@ -1434,8 +1478,7 @@ public class IrBuilder
         return new IrParameter
         {
             Name = name,
-            // Сохраняем исходное «проводное» имя (напр. Paging.Offset) — sanitize мог превратить его в
-            // валидный идентификатор (Paging_Offset), но в URL/заголовке ключ должен остаться исходным.
+            // Keep the wire name even when source identifier sanitization changes punctuation.
             OriginalName = parameter.Name ?? name,
             Type = type,
             IsRequired = isRequired,
@@ -1444,13 +1487,40 @@ public class IrBuilder
             Description = !string.IsNullOrWhiteSpace(parameter.Description) ? parameter.Description : schema.Description,
             DefaultValue = ExtractDefaultValue(schema.Default),
             // Reuse the same constraint extraction as model properties so params carry lengths/ranges/patterns.
-            Constraints = ExtractConstraints(schema)
+            Constraints = ExtractConstraints(schema),
+            Style = NormalizeParameterStyle(parameter),
+            Explode = parameter.Explode,
+        };
+    }
+
+    /// <summary>Maps the reader's effective parameter style into the SDK-independent IR vocabulary.</summary>
+    /// <param name="parameter">The source parameter whose location supplies an omitted style's default.</param>
+    /// <returns>The normalized serialization style.</returns>
+    /// <exception cref="InvalidOperationException">The reader supplies a style absent from the shared IR vocabulary.</exception>
+    private static IrParameterStyle NormalizeParameterStyle(IOpenApiParameter parameter)
+    {
+        var style = parameter.Style ?? (parameter.In is ParameterLocation.Query or ParameterLocation.Cookie
+            ? ParameterStyle.Form
+            : ParameterStyle.Simple);
+        return style switch
+        {
+            ParameterStyle.Matrix => IrParameterStyle.Matrix,
+            ParameterStyle.Label => IrParameterStyle.Label,
+            ParameterStyle.Form => IrParameterStyle.Form,
+            ParameterStyle.Simple => IrParameterStyle.Simple,
+            ParameterStyle.SpaceDelimited => IrParameterStyle.SpaceDelimited,
+            ParameterStyle.PipeDelimited => IrParameterStyle.PipeDelimited,
+            ParameterStyle.DeepObject => IrParameterStyle.DeepObject,
+            ParameterStyle.Cookie => IrParameterStyle.Cookie,
+            _ => throw new InvalidOperationException($"Parameter '{parameter.Name}' has unsupported serialization style '{style}'."),
         };
     }
     
-    /// <summary>
-    /// Строит IrRequestBody из OpenAPI request body
-    /// </summary>
+    /// <summary>Builds a request-body contract with presence controlled only by requestBody.required.</summary>
+    /// <param name="requestBody">The request-body presence and media-type contract.</param>
+    /// <param name="document">The OpenAPI document used to resolve referenced schemas.</param>
+    /// <param name="operationId">The optional operation identity used to name inline form models.</param>
+    /// <returns>The body contract whose required flag is independent of its model's required properties.</returns>
     private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document, string? operationId = null)
     {
         // Берем первый content type (обычно application/json)
@@ -1476,15 +1546,10 @@ public class IrBuilder
                     : null))
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
-        // Проверяем, есть ли в схеме хотя бы одно required свойство
-        // Если есть, то request body должен быть required, даже если requestBody.Required = false
-        var hasRequiredProperties = schema != null && HasRequiredPropertiesInSchema(schema, document);
-        var isRequired = requestBody.Required || hasRequiredProperties;
-        
         return new IrRequestBody
         {
             Type = type,
-            IsRequired = isRequired,
+            IsRequired = requestBody.Required,
             ContentType = contentType,
             Description = requestBody.Description
         };
@@ -1508,225 +1573,43 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Строит граф зависимостей типов
+    /// Reserves an inline model name without overwriting another inline or declared type.
     /// </summary>
-    private IrTypeDependencyGraph BuildTypeDependencyGraph(
-        IReadOnlyList<IrModel> models,
-        IReadOnlyList<IrEnum> enums,
-        IReadOnlyList<IrClient> clients)
-    {
-        var dependencies = new Dictionary<string, HashSet<string>>();
-        var allTypeNames = new HashSet<string>();
-        
-        // Добавляем все типы в граф
-        foreach (var model in models)
-        {
-            allTypeNames.Add(model.Name);
-            dependencies[model.Name] = new HashSet<string>();
-        }
-        
-        foreach (var enumModel in enums)
-        {
-            allTypeNames.Add(enumModel.Name);
-            dependencies[enumModel.Name] = new HashSet<string>();
-        }
-        
-        // Собираем зависимости из моделей
-        foreach (var model in models)
-        {
-            var modelDependencies = ExtractDependenciesFromModel(model);
-            dependencies[model.Name] = modelDependencies;
-        }
-        
-        // Собираем зависимости из операций клиентов
-        foreach (var client in clients)
-        {
-            foreach (var operation in client.Operations)
-            {
-                // Зависимости из параметров
-                foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
-                {
-                    var paramDeps = ExtractDependenciesFromType(param.Type);
-                    foreach (var dep in paramDeps)
-                    {
-                        if (allTypeNames.Contains(dep))
-                        {
-                            // Зависимость от другого типа в IR
-                            // Можно добавить в зависимости клиента, но пока просто собираем
-                        }
-                    }
-                }
-                
-                // Зависимости из request body
-                if (operation.RequestBody != null)
-                {
-                    var bodyDeps = ExtractDependenciesFromType(operation.RequestBody.Type);
-                    // Аналогично
-                }
-                
-                // Зависимости из responses
-                foreach (var response in operation.Responses)
-                {
-                    if (response.Type != null)
-                    {
-                        var responseDeps = ExtractDependenciesFromType(response.Type);
-                        // Аналогично
-                    }
-                }
-            }
-        }
-        
-        // Топологическая сортировка
-        var topologicalOrder = TopologicalSort(dependencies, allTypeNames);
-        
-        // Преобразуем в ImmutableDictionary
-        var immutableDependencies = dependencies.ToDictionary(
-            kvp => kvp.Key,
-            kvp => (IReadOnlyList<string>)kvp.Value.ToList()
-        );
-        
-        return new IrTypeDependencyGraph
-        {
-            Dependencies = immutableDependencies.ToImmutableDictionary(),
-            TopologicalOrder = topologicalOrder
-        };
-    }
-    
-    /// <summary>
-    /// Извлекает зависимости из модели
-    /// </summary>
-    private HashSet<string> ExtractDependenciesFromModel(IrModel model)
-    {
-        var dependencies = new HashSet<string>();
-        
-        foreach (var property in model.Properties)
-        {
-            var deps = ExtractDependenciesFromType(property.Type);
-            dependencies.UnionWith(deps);
-        }
-        
-        if (model.Composition != null)
-        {
-            foreach (var type in model.Composition.Types)
-            {
-                var deps = ExtractDependenciesFromType(type);
-                dependencies.UnionWith(deps);
-            }
-        }
-        
-        return dependencies;
-    }
-    
-    /// <summary>
-    /// Извлекает зависимости из типа
-    /// </summary>
-    private HashSet<string> ExtractDependenciesFromType(IrType type)
-    {
-        var dependencies = new HashSet<string>();
-        
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                dependencies.Add(modelRef.ModelName);
-                break;
-            case IrArrayType arrayType:
-                dependencies.UnionWith(ExtractDependenciesFromType(arrayType.ElementType));
-                break;
-            case IrDictionaryType dictType:
-                dependencies.UnionWith(ExtractDependenciesFromType(dictType.KeyType));
-                dependencies.UnionWith(ExtractDependenciesFromType(dictType.ValueType));
-                break;
-            case IrUnionType unionType:
-                foreach (var t in unionType.Types)
-                    dependencies.UnionWith(ExtractDependenciesFromType(t));
-                break;
-            case IrIntersectionType intersectionType:
-                foreach (var t in intersectionType.Types)
-                    dependencies.UnionWith(ExtractDependenciesFromType(t));
-                break;
-            case IrNullableType nullableType:
-                dependencies.UnionWith(ExtractDependenciesFromType(nullableType.InnerType));
-                break;
-            case IrOptionalType optionalType:
-                dependencies.UnionWith(ExtractDependenciesFromType(optionalType.InnerType));
-                break;
-        }
-        
-        return dependencies;
-    }
-    
-    /// <summary>
-    /// Топологическая сортировка графа зависимостей
-    /// </summary>
-    private IReadOnlyList<string> TopologicalSort(
-        Dictionary<string, HashSet<string>> dependencies,
-        HashSet<string> allTypeNames)
-    {
-        var result = new List<string>();
-        var visited = new HashSet<string>();
-        var visiting = new HashSet<string>();
-        
-        void Visit(string typeName)
-        {
-            if (visiting.Contains(typeName))
-            {
-                // Циклическая зависимость - просто добавляем в конец
-                return;
-            }
-            
-            if (visited.Contains(typeName))
-                return;
-            
-            visiting.Add(typeName);
-            
-            if (dependencies.TryGetValue(typeName, out var deps))
-            {
-                foreach (var dep in deps)
-                {
-                    if (allTypeNames.Contains(dep))
-                    {
-                        Visit(dep);
-                    }
-                }
-            }
-            
-            visiting.Remove(typeName);
-            visited.Add(typeName);
-            result.Add(typeName);
-        }
-        
-        foreach (var typeName in allTypeNames)
-        {
-            if (!visited.Contains(typeName))
-            {
-                Visit(typeName);
-            }
-        }
-        
-        return result;
-    }
-    
-    /// <summary>
-    /// Генерирует имя для inline модели на основе контекста
-    /// </summary>
+    /// <remarks>Preserves the historical simple name when free, then uses contextual and numeric disambiguation.</remarks>
+    /// <param name="propertyContext">Optional property or form information used for readable names.</param>
+    /// <returns>A unique name reserved before recursively constructing the inline model.</returns>
     private string GenerateInlineModelNameFromContext(PropertyContext? propertyContext)
     {
-        // Если это форма, генерируем {operationId}FormModel
+        string name;
         if (propertyContext?.IsForm == true && !string.IsNullOrEmpty(propertyContext.OperationId))
         {
             var operationIdPascal = _namingConverter.ToPascalCase(propertyContext.OperationId);
-            return _namingConverter.SanitizeIdentifier($"{operationIdPascal}FormModel");
+            name = _namingConverter.SanitizeIdentifier($"{operationIdPascal}FormModel");
         }
-        
-        // Если есть имя свойства, генерируем {propertyName}InlineModel
-        if (!string.IsNullOrEmpty(propertyContext?.PropertyName))
+        else if (!string.IsNullOrEmpty(propertyContext?.PropertyName))
         {
             var propertyNamePascal = _namingConverter.ToPascalCase(propertyContext.PropertyName);
-            return _namingConverter.SanitizeIdentifier($"{propertyNamePascal}InlineModel");
+            name = _namingConverter.SanitizeIdentifier($"{propertyNamePascal}InlineModel");
         }
-        
-        // Fallback: используем счетчик
-        return _namingConverter.SanitizeIdentifier($"InlineModel{_inlineModelCounter++}");
+        else
+        {
+            name = _namingConverter.SanitizeIdentifier($"InlineModel{_inlineModelCounter++}");
+        }
+
+        if (_allocatedTypeNames.Add(_namingConverter.ToPascalCase(name)))
+            return name;
+
+        var owner = _ctx.RootModelName ?? _ctx.OperationId ?? propertyContext?.ParentModelName;
+        var propertyPath = string.Concat(_ctx.PropertyPath.Select(_namingConverter.ToPascalCase));
+        var contextualName = string.IsNullOrEmpty(owner)
+            ? name
+            : _namingConverter.SanitizeIdentifier(owner + (propertyPath.Length == 0 ? name : propertyPath + "InlineModel"));
+        var candidate = contextualName;
+        var suffix = 2;
+        while (!_allocatedTypeNames.Add(_namingConverter.ToPascalCase(candidate)))
+            candidate = contextualName + (suffix++).ToString(CultureInfo.InvariantCulture);
+
+        return candidate;
     }
 
     /// <summary>

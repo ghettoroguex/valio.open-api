@@ -1,0 +1,76 @@
+"openapi": "3.2.0"
+"info":
+  "title": "Parser matrix"
+  "version": "1.0.0"
+"paths":
+  "/items":
+    "post":
+      "operationId": "createItem"
+      "tags":
+        - "Items"
+      "responses":
+        "200":
+          "description": "Accepted item."
+          "content":
+            "application/json":
+              "schema":
+                "allOf":
+                  -
+                    "$ref": "#/components/schemas/Base"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "allOf":
+                -
+                  "$ref": "#/components/schemas/Base"
+"servers":
+  -
+    "url": "https://api.example.test/v1"
+"components":
+  "schemas":
+    "Base":
+      "type": "object"
+      "required":
+        - "id"
+        - "kind"
+      "properties":
+        "id":
+          "type": "string"
+        "kind":
+          "type": "string"
+          "enum":
+            - "base"
+        "label":
+          "type": "string"
+          "minLength": 2
+          "maxLength": 24
+          "description": "A constrained label."
+    "State":
+      "type": "string"
+      "enum":
+        - "ready"
+        - "done"
+    "Alternative":
+      "type": "object"
+      "required":
+        - "kind"
+        - "count"
+      "properties":
+        "kind":
+          "type": "string"
+          "enum":
+            - "alternative"
+        "count":
+          "type": "integer"
+          "format": "int32"
+    "Choice":
+      "allOf":
+        -
+          "$ref": "#/components/schemas/Base"
+        -
+          "type": "object"
+          "properties":
+            "extra":
+              "type": "string"

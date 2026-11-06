@@ -19,6 +19,9 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\ValIO.Core\ValIO.Core.csproj" />
         <ProjectReference Include="..\..\src\ValIO.Generators.CSharp\ValIO.Generators.CSharp.csproj" />
+        <None Include="..\..\samples\csharp-http-pipeline\BearerReplayHandler.cs"
+              Link="Fixtures\CSharpHttpPipeline\BearerReplayHandler.cs" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Fixtures\HttpPipelineChecks.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

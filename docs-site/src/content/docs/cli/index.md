@@ -10,8 +10,8 @@ result either as a folder tree or as a zip archive.
 
 ## Subcommands
 
-- [`valio generate`](./generate/) — generate code from an OpenAPI schema
-- [`valio validate`](./validate/) — parse a schema and print its metadata
+- [`valio generate`](/cli/generate/) — generate code from an OpenAPI schema
+- [`valio validate`](/cli/validate/) — parse a schema and print its metadata
 
 ## Global options
 

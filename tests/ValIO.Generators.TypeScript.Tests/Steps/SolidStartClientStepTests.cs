@@ -45,6 +45,8 @@ public class SolidStartClientStepTests
         solid.Content.Should().StartWith("\"use server\";");
     }
 
+    /// <summary>Verifies SolidTransport_PerOperationFileNamingAndFetchBody with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task SolidTransport_PerOperationFileNamingAndFetchBody()
     {
@@ -61,7 +63,7 @@ public class SolidStartClientStepTests
         var solid = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.solid.ts", StringComparison.Ordinal));
         solid.Content.Should().Contain("async function");
-        solid.Content.Should().Contain("await fetch(");
+        solid.Content.Should().Contain("await httpClient(");
         solid.Content.Should().Contain("RequestInit");
         solid.Content.Should().NotContain("axios");
         solid.Content.Should().NotContain("$fetch");

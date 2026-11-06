@@ -26,7 +26,9 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// const url = path + (query.size &gt; 0 ? `?${query}` : "");
 /// </code>
 /// <c>URLSearchParams</c> performs the percent-encoding, so no manual <c>encodeURIComponent</c> is emitted. Array
-/// values are comma-joined by <c>String(...)</c> — adequate for v1.
+/// values are comma-joined by <c>String(...)</c> — adequate for v1. Each URLSearchParams key uses
+/// <see cref="IrParameter.OriginalName"/>, while its value access uses the sanitized
+/// <see cref="IrParameter.Name"/>.
 /// </remarks>
 /// <seealso cref="TypeScriptRequestPath"/>
 public static class TypeScriptQueryString
@@ -74,9 +76,11 @@ public static class TypeScriptQueryString
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
+            // The key is the wire name (Paging.Offset), not the sanitized TS property (Paging_Offset):
+            // ASP.NET binds a nested model by its dotted name and finds nothing under the underscore.
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(Str(parameter.Name),
+                ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
             if (parameter.IsRequired)
                 statements.Add(setCall);

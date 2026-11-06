@@ -1,0 +1,54 @@
+{
+  "openapi": "3.1.2",
+  "info": { "title": "Second concurrent document", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "SharedRecord": {
+        "type": "object",
+        "description": "The second request reuses declaration names but has different fields and types.",
+        "required": ["secondText", "secondCount", "state", "sharedValue"],
+        "properties": {
+          "secondText": { "type": "string", "description": "Text exclusive to the second document." },
+          "secondCount": { "type": "string" },
+          "secondEnabled": { "type": "integer" },
+          "secondRatio": { "type": "string" },
+          "secondLabels": { "type": "array", "items": { "type": "integer" } },
+          "secondCounters": { "type": "object", "additionalProperties": { "type": "string" } },
+          "secondDetails": { "$ref": "#/components/schemas/SharedDetails" },
+          "secondStates": { "type": "array", "items": { "$ref": "#/components/schemas/SharedState" } },
+          "state": { "$ref": "#/components/schemas/SharedState" },
+          "sharedValue": { "type": "integer", "format": "int64" },
+          "secondDescription": { "type": "boolean" },
+          "secondSequence": { "type": "string" },
+          "secondScores": { "type": "array", "items": { "type": "boolean" } },
+          "secondFlags": { "type": "object", "additionalProperties": { "type": "number" } },
+          "secondCode": { "type": "integer" },
+          "secondNotes": { "type": "array", "items": { "type": "string" } },
+          "secondIndex": { "type": "string" },
+          "secondActive": { "type": "integer" }
+        }
+      },
+      "SharedDetails": {
+        "type": "object",
+        "description": "A second declaration with ten second-document fields must not inherit renderer state.",
+        "properties": {
+          "secondName": { "type": "integer" },
+          "secondAddress": { "type": "boolean" },
+          "secondAttempts": { "type": "string" },
+          "secondVerified": { "type": "string" },
+          "secondTotal": { "type": "boolean" },
+          "secondOwner": { "type": "number" },
+          "secondRevision": { "type": "string" },
+          "secondTags": { "type": "array", "items": { "type": "integer" } },
+          "secondVisible": { "type": "number" },
+          "secondPriority": { "type": "boolean" }
+        }
+      },
+      "SharedState": {
+        "type": "string",
+        "enum": ["secondPending", "secondRejected", "secondExpired"]
+      }
+    }
+  }
+}

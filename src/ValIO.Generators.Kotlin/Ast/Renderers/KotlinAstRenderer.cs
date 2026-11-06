@@ -244,6 +244,10 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
     public override string VisitKotlinFunctionDeclaration(KotlinFunctionDeclarationNode node) =>
         RenderFunction(node, indent: 0);
 
+    /// <summary>Renders a function using its selected structured or text-backed body representation.</summary>
+    /// <param name="node">The function declaration.</param>
+    /// <param name="indent">The surrounding declaration indentation level.</param>
+    /// <returns>The complete function declaration.</returns>
     private string RenderFunction(KotlinFunctionDeclarationNode node, int indent)
     {
         var sb = new StringBuilder();
@@ -257,6 +261,7 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
 
         var modifiers = new List<string>();
         if (!string.IsNullOrEmpty(node.Visibility)) modifiers.Add(node.Visibility);
+        if (node.IsOverride) modifiers.Add("override");
         if (node.IsSuspend) modifiers.Add("suspend");
         modifiers.Add("fun");
         var header = string.Join(" ", modifiers);
@@ -266,6 +271,14 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
             ? $": {RenderType(node.ReturnType)}"
             : "";
 
+        if (node.StructuredBody != null)
+        {
+            sb.AppendLine($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation} {{");
+            foreach (var line in VisitBlock(node.StructuredBody).Split('\n'))
+                sb.AppendLine(Indent(indent + 1) + line.TrimEnd('\r'));
+            sb.AppendLine(prefix + "}");
+            return sb.ToString();
+        }
         if (node.Body.Count == 0)
         {
             sb.AppendLine($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation}");
@@ -306,6 +319,17 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
     }
 
     public override string VisitKotlinParameter(KotlinParameterNode node) => RenderParameter(node);
+
+    /// <inheritdoc/>
+    public override string VisitKotlinObjectExpression(KotlinObjectExpressionNode node)
+    {
+        var result = new StringBuilder();
+        result.AppendLine($"object : {RenderType(node.InterfaceType)} {{");
+        foreach (var member in node.Members)
+            result.Append(RenderDeclaration(member, 1));
+        result.Append('}');
+        return result.ToString();
+    }
 
     private string RenderParameter(KotlinParameterNode node)
     {
@@ -380,8 +404,9 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
             ? $"@{node.Name.Name}({string.Join(", ", node.Arguments.Select(Visit))})"
             : $"@{node.Name.Name}";
 
-    public override string VisitBlock(BlockNode node) =>
-        string.Join("\n", node.Statements.Select(Visit));
+    /// <inheritdoc/>
+    public override string VisitBlock(BlockNode node) => string.Join("\n", node.Statements.Select(statement =>
+        Visit(statement) ?? throw new NotSupportedException($"Cannot render structured Kotlin statement '{statement.GetType().Name}'.")));
 
     public override string VisitImport(ImportNode node) => string.Empty;
     public override string VisitExport(ExportNode node) => string.Empty;
@@ -392,11 +417,13 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
     public override string VisitIdentifierExpression(IdentifierExpressionNode node) =>
         node.Identifier.Name;
 
+    /// <inheritdoc/>
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
+        var typeArgument = node.GenericTypeArgument == null ? string.Empty : "<" + RenderType(node.GenericTypeArgument) + ">";
         var args = string.Join(", ", node.Arguments.Select(Visit));
-        return $"{target}({args})";
+        return $"{target}{typeArgument}({args})";
     }
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>

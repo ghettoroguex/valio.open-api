@@ -15,12 +15,23 @@ namespace ValIO.Application.Services;
 /// </summary>
 public sealed class GenerationOrchestrator : IGenerationOrchestrator
 {
+    /// <summary>Reads source documents without retaining per-request state.</summary>
     private readonly IOpenApiDocumentParser _parser;
+    /// <summary>Resolves the requested language plugin.</summary>
     private readonly IGeneratorRegistry _registry;
+    /// <summary>Converts source names while building each request's IR.</summary>
     private readonly INamingConverter _namingConverter;
+    /// <summary>Reports generation progress and actionable diagnostics.</summary>
     private readonly ILogger<GenerationOrchestrator> _logger;
+    /// <summary>Resolves fresh pipeline dependencies for each generation request.</summary>
     private readonly IServiceProvider _services;
 
+    /// <summary>Initializes the shared orchestrator with stateless application services.</summary>
+    /// <param name="parser">The source document parser.</param>
+    /// <param name="registry">The supported language plugins.</param>
+    /// <param name="namingConverter">The IR naming policy.</param>
+    /// <param name="logger">The diagnostic logger.</param>
+    /// <param name="services">The provider used to create a new pipeline per request.</param>
     public GenerationOrchestrator(
         IOpenApiDocumentParser parser,
         IGeneratorRegistry registry,
@@ -35,6 +46,7 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
         _services = services;
     }
 
+    /// <inheritdoc />
     public async Task<OrchestrationResult> GenerateAsync(
         GenerationConfiguration config,
         string schemaPath,
@@ -95,6 +107,8 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
 
         try
         {
+            // Validate declaration identity once before any language step emits output.
+            _ = context.DocumentContext;
             var pipeline = plugin.CreatePipeline(_services);
             await pipeline.ExecuteAsync(context, ct);
         }
@@ -124,10 +138,10 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
     }
 
     /// <summary>
-    /// Переносит настраиваемые prefix/suffix имён моделей/методов/enum'ов из конфигурации
-    /// в IR-преобразование. Result/response-type affix (TypeScript) применяется в самом
-    /// генераторе, поэтому здесь не участвует.
+    /// Projects declaration affixes into IR naming before the shared document context is created.
     /// </summary>
+    /// <param name="naming">The configured declaration naming conventions.</param>
+    /// <returns>The IR model, enum, and operation affixes.</returns>
     private static NameAffixOptions BuildAffixOptions(NamingConventions naming)
         => new()
         {

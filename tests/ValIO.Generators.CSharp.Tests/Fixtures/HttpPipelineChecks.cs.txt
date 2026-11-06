@@ -1,0 +1,279 @@
+using System.Net;
+using System.Text;
+using Generated.Contracts;
+using ValIO.Samples.HttpPipeline;
+
+/// <summary>Exercises the actual sample handler with generated JSON, multipart, and bodyless methods.</summary>
+internal static class HttpPipelineChecks
+{
+    /// <summary>Verifies hook counts, dynamic credentials, bounded replay, body preservation, and cancellation.</summary>
+    /// <returns>A task completing after every isolated in-memory transport scenario passes.</returns>
+    internal static async Task Run()
+    {
+        string? token = "old";
+        var refreshCalls = 0;
+        var beforeCalls = 0;
+        var afterCalls = 0;
+        var allowRefresh = true;
+        using var transport = new ReplayCaptureHandler { UnauthorizedResponsesRemaining = 1 };
+        using var handler = new BearerReplayHandler(
+            transport,
+            ct => { ct.ThrowIfCancellationRequested(); return ValueTask.FromResult<string?>(token); },
+            ct =>
+            {
+                ct.ThrowIfCancellationRequested();
+                refreshCalls++;
+                if (allowRefresh) token = "fresh";
+                return ValueTask.FromResult(allowRefresh);
+            },
+            (request, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                beforeCalls++;
+                request.Headers.TryAddWithoutValidation("X-Hook", "observed");
+                return ValueTask.CompletedTask;
+            },
+            (request, response, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                afterCalls++;
+                return ValueTask.CompletedTask;
+            });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.invalid") };
+        var api = new TransportApi(http);
+
+        Require(await api.SendJson(new Combined { Message = "wire payload" }) == 7, "JSON response was lost after replay.");
+        VerifyReplay(transport.Requests, "application/json");
+        Require(Encoding.UTF8.GetString(transport.Requests[0].Body!).Contains("wire payload", StringComparison.Ordinal),
+            "The replay fixture did not transmit JSON content.");
+        Require(refreshCalls == 1 && beforeCalls == 2 && afterCalls == 2, "JSON refresh or hook counts were incorrect.");
+
+        token = "old";
+        transport.UnauthorizedResponsesRemaining = 1;
+        var form = new UploadForm
+        {
+            Content = new NonSeekableStream([0, 1, 255, 2]), State = State.InProgress, Amount = 1.5, Enabled = true
+        };
+        Require(await SendMultipart(api, form) == 7, "Multipart response was lost after replay.");
+        VerifyReplay(transport.Requests.TakeLast(2).ToArray(), "multipart/form-data");
+        Require(refreshCalls == 2 && beforeCalls == 4 && afterCalls == 4, "Multipart refresh or hook counts were incorrect.");
+        Require(!form.Content.CanRead, "The generated multipart request did not dispose its owned stream.");
+
+        token = "external";
+        await api.Ping();
+        Require(transport.Requests[^1].Authorization == "Bearer external", "Bearer tokens were cached between calls.");
+        Require(beforeCalls == 5 && afterCalls == 5, "Bodyless calls did not pass through both hooks.");
+
+        token = "old";
+        transport.UnauthorizedResponsesRemaining = 2;
+        var previousAttempts = transport.Requests.Count;
+        try
+        {
+            await api.SendJson(new Combined());
+            throw new InvalidOperationException("A repeated unauthorized response was swallowed.");
+        }
+        catch (ApiException exception) when (exception.StatusCode == HttpStatusCode.Unauthorized && exception.Content == "expired")
+        {
+        }
+        Require(transport.Requests.Count == previousAttempts + 2 && refreshCalls == 3,
+            "A second 401 caused additional refreshes or lost the raw error response.");
+
+        allowRefresh = false;
+        transport.UnauthorizedResponsesRemaining = 1;
+        previousAttempts = transport.Requests.Count;
+        try
+        {
+            await api.Ping();
+            throw new InvalidOperationException("A denied refresh was swallowed.");
+        }
+        catch (ApiException exception) when (exception.StatusCode == HttpStatusCode.Unauthorized)
+        {
+        }
+        Require(transport.Requests.Count == previousAttempts + 1 && refreshCalls == 4,
+            "A denied refresh replayed the operation.");
+        allowRefresh = true;
+
+        transport.ReturnGatewayError = true;
+        try
+        {
+            await api.SendJson(new Combined());
+            throw new InvalidOperationException("A gateway error was swallowed.");
+        }
+        catch (ApiException exception) when (exception.Content == "<html>gateway failure</html>")
+        {
+        }
+        Require(refreshCalls == 4, "A non-401 response triggered token refresh.");
+        transport.ReturnGatewayError = false;
+
+        using (var canceled = new CancellationTokenSource())
+        using (var untouchedContent = new MemoryStream([1, 2, 3]))
+        {
+            canceled.Cancel();
+            previousAttempts = transport.Requests.Count;
+            var previousBefore = beforeCalls;
+            try
+            {
+                await SendMultipart(api, new UploadForm { Content = untouchedContent }, canceled.Token);
+                throw new InvalidOperationException("Pre-cancellation was ignored.");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            Require(transport.Requests.Count == previousAttempts && beforeCalls == previousBefore && untouchedContent.Position == 0 && untouchedContent.CanRead,
+                "A pre-canceled operation entered the handler or consumed/disposed the request body.");
+        }
+
+        transport.BlockUntilCanceled = true;
+        using (var canceled = new CancellationTokenSource())
+        {
+            var previousBefore = beforeCalls;
+            var previousAfter = afterCalls;
+            var pending = api.Ping(canceled.Token);
+            await transport.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            canceled.Cancel();
+            try
+            {
+                await pending;
+                throw new InvalidOperationException("In-flight cancellation was ignored.");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            Require(beforeCalls == previousBefore + 1 && afterCalls == previousAfter && refreshCalls == 4,
+                "An in-flight cancellation lost the token or incorrectly invoked response/refresh hooks.");
+        }
+
+        using var boundedTransport = new ReplayCaptureHandler();
+        using var boundedHandler = new BearerReplayHandler(boundedTransport,
+            ct => ValueTask.FromResult<string?>("token"), ct => ValueTask.FromResult(true), maxReplayBodyBytes: 2);
+        using var boundedHttp = new HttpClient(boundedHandler) { BaseAddress = new Uri("https://example.invalid") };
+        try
+        {
+            await new TransportApi(boundedHttp).SendJson(new Combined { Message = "larger than the buffer" });
+            throw new InvalidOperationException("The replay body limit was ignored.");
+        }
+        catch (HttpRequestException)
+        {
+        }
+        Require(boundedTransport.Requests.Count == 0, "An oversized body reached the transport.");
+    }
+
+    /// <summary>Calls the generated multipart operation with a body and the original cancellation token.</summary>
+    /// <param name="api">The generated client.</param>
+    /// <param name="form">The body whose stream ownership transfers to a prepared request.</param>
+    /// <param name="cancellationToken">Cancels request preparation, content writing, and response handling.</param>
+    /// <returns>The deserialized numeric result.</returns>
+    private static Task<int> SendMultipart(TransportApi api, UploadForm form, CancellationToken cancellationToken = default) =>
+        api.Send("path", null, null, true, null, null, null, null, null, null, null, "wire-header", form, cancellationToken);
+
+    /// <summary>Checks that refresh produced two fresh requests with identical wire bodies and metadata.</summary>
+    /// <param name="requests">The initial attempt followed by its replay.</param>
+    /// <param name="mediaType">The expected request media type.</param>
+    private static void VerifyReplay(IReadOnlyList<RequestSnapshot> requests, string mediaType)
+    {
+        Require(requests.Count == 2, "An operation did not issue exactly two HTTP attempts.");
+        Require(requests[0].Authorization == "Bearer old" && requests[1].Authorization == "Bearer fresh", "Replay reused stale credentials.");
+        Require(requests[0].Body is not null && requests[0].Body!.SequenceEqual(requests[1].Body!), "Replay changed or lost the request bytes.");
+        Require(requests[0].ContentType == requests[1].ContentType && requests[0].ContentType!.StartsWith(mediaType, StringComparison.Ordinal),
+            "Replay changed the JSON media type or multipart boundary.");
+        Require(requests[0].Uri == requests[1].Uri && requests[0].Method == requests[1].Method &&
+            requests[0].HookHeader == "observed" && requests[1].HookHeader == "observed" && requests[0].WireHeader == requests[1].WireHeader,
+            "Replay changed routing or dropped a generated/custom header.");
+    }
+
+    /// <summary>Fails the executable fixture with a precise contract diagnostic.</summary>
+    /// <param name="condition">Whether the expected behavior occurred.</param>
+    /// <param name="message">The failure diagnostic.</param>
+    private static void Require(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+    }
+
+    /// <summary>Stores wire values observed before a cloned request is disposed.</summary>
+    /// <param name="Uri">The generated absolute request URI.</param>
+    /// <param name="Method">The HTTP method.</param>
+    /// <param name="Authorization">The attempt-specific bearer header.</param>
+    /// <param name="ContentType">The content type, including the multipart boundary.</param>
+    /// <param name="Body">The exact serialized bytes.</param>
+    /// <param name="HookHeader">The header inserted by the before hook.</param>
+    /// <param name="WireHeader">The header declared in the API schema.</param>
+    private sealed record RequestSnapshot(Uri? Uri, HttpMethod Method, string? Authorization, string? ContentType,
+        byte[]? Body, string? HookHeader, string? WireHeader);
+
+    /// <summary>Simulates authorized, unauthorized, failed, and cancelable HTTP responses.</summary>
+    private sealed class ReplayCaptureHandler : HttpMessageHandler
+    {
+        /// <summary>Gets every received attempt in order.</summary>
+        internal List<RequestSnapshot> Requests { get; } = [];
+        /// <summary>Gets or sets the remaining unauthorized response count.</summary>
+        internal int UnauthorizedResponsesRemaining { get; set; }
+        /// <summary>Gets or sets whether to produce a raw non-JSON gateway error.</summary>
+        internal bool ReturnGatewayError { get; set; }
+        /// <summary>Gets or sets whether to wait for the caller's cancellation token.</summary>
+        internal bool BlockUntilCanceled { get; set; }
+        /// <summary>Signals when the cancelable inner transport has started.</summary>
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        /// <inheritdoc/>
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var bytes = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+            Requests.Add(new RequestSnapshot(request.RequestUri, request.Method, request.Headers.Authorization?.ToString(),
+                request.Content?.Headers.ContentType?.ToString(), bytes,
+                request.Headers.TryGetValues("X-Hook", out var hooks) ? hooks.Single() : null,
+                request.Headers.TryGetValues("X.Trace", out var wire) ? wire.Single() : null));
+            if (BlockUntilCanceled)
+            {
+                Require(cancellationToken.CanBeCanceled, "The inner HTTP handler did not receive a cancellation token.");
+                Started.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            var unauthorized = UnauthorizedResponsesRemaining > 0;
+            if (unauthorized) UnauthorizedResponsesRemaining--;
+            var bodyless = request.RequestUri!.AbsolutePath == "/ping";
+            var status = unauthorized ? HttpStatusCode.Unauthorized : ReturnGatewayError ? HttpStatusCode.BadGateway :
+                bodyless ? HttpStatusCode.NoContent : HttpStatusCode.OK;
+            return new HttpResponseMessage(status)
+            {
+                Content = new StringContent(unauthorized ? "expired" : ReturnGatewayError ? "<html>gateway failure</html>" : bodyless ? "" : "7")
+            };
+        }
+    }
+
+    /// <summary>Provides a readable upload stream that cannot rewind for a replay.</summary>
+    private sealed class NonSeekableStream : Stream
+    {
+        /// <summary>Owns the fixture bytes and current read position.</summary>
+        private readonly MemoryStream _inner;
+        /// <summary>Creates a non-seekable view over an owned byte array.</summary>
+        /// <param name="bytes">The upload bytes.</param>
+        internal NonSeekableStream(byte[] bytes) => _inner = new MemoryStream(bytes);
+        /// <inheritdoc/>
+        public override bool CanRead => _inner.CanRead;
+        /// <inheritdoc/>
+        public override bool CanSeek => false;
+        /// <inheritdoc/>
+        public override bool CanWrite => false;
+        /// <inheritdoc/>
+        public override long Length => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        /// <inheritdoc/>
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        /// <inheritdoc/>
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => _inner.ReadAsync(buffer, cancellationToken);
+        /// <inheritdoc/>
+        public override void Flush() => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public override void SetLength(long value) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+}

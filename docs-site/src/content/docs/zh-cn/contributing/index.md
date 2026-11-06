@@ -10,7 +10,7 @@ ValIO 欢迎社区贡献 —— 新的生成器插件、为现有插件新增传
 ## 本地搭建
 
 ```bash
-git clone https://github.com/your-org/valio
+git clone https://github.com/valio-projects/valio.open-api
 cd valio
 dotnet build ValIO.sln
 dotnet test  ValIO.sln

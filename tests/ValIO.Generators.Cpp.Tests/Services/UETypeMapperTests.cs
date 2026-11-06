@@ -1,9 +1,11 @@
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.Cpp.Services;
+using ValIO.Generators.Cpp.Tests.TestHelpers;
 
 namespace ValIO.Generators.Cpp.Tests.Services;
 
@@ -14,10 +16,12 @@ namespace ValIO.Generators.Cpp.Tests.Services;
 [TestFixture]
 public class UETypeMapperTests
 {
+    /// <summary>Holds the mapper created with an explicit context for each scenario.</summary>
     private UETypeMapper _sut = null!;
 
+    /// <summary>Creates the mapper with a finalized document that declares the tested enum.</summary>
     [SetUp]
-    public void Setup() => _sut = new UETypeMapper(new UENamingConvention());
+    public void Setup() => _sut = new UETypeMapper(new UENamingConvention(), CppDocumentContextFactory.Create(enums: [new IrEnum { Name = "Status", BaseType = IrEnumBaseType.String, Values = [] }]));
 
     private static IrPrimitiveType Prim(IrPrimitiveKind k) => new() { PrimitiveKind = k };
 
@@ -79,10 +83,11 @@ public class UETypeMapperTests
         simple.Name.Name.Should().Be("FPet");
     }
 
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     [Test]
     public void ModelReference_WhenEnum_BecomesEEnum()
     {
-        _sut.SetEnumNamesForDocument(new[] { "Status" });
         var t = new IrModelReference { ModelName = "Status" };
         var simple = (SimpleTypeNode)_sut.MapType(t);
         simple.Name.Name.Should().Be("EStatus");
@@ -126,10 +131,11 @@ public class UETypeMapperTests
         ((SimpleTypeNode)_sut.MapType(t)).Name.Name.Should().Be("FAnimal");
     }
 
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     [Test]
     public void IsEnumReference_TrueWhenEnumNameSet()
     {
-        _sut.SetEnumNamesForDocument(new[] { "Status" });
         _sut.IsEnumReference("Status").Should().BeTrue();
         _sut.IsEnumReference("Pet").Should().BeFalse();
     }

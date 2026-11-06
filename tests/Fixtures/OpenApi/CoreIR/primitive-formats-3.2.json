@@ -1,0 +1,188 @@
+{
+  "openapi": "3.2.0",
+  "info": {
+    "title": "Primitive format retention",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/temporal": {
+      "post": {
+        "operationId": "temporalValue",
+        "responses": {
+          "200": {
+            "description": "Temporal value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "TIME"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "at",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "TIME"
+            },
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string",
+                "format": "Duration"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Formats": {
+        "type": "object",
+        "required": [
+          "time",
+          "duration"
+        ],
+        "properties": {
+          "plain": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": " DATE "
+          },
+          "dateTime": {
+            "type": "string",
+            "format": "DATE-TIME"
+          },
+          "time": {
+            "type": "string",
+            "format": " Time "
+          },
+          "timeEquivalent": {
+            "type": "string",
+            "format": "time"
+          },
+          "duration": {
+            "type": "string",
+            "format": " Duration "
+          },
+          "timeSpan": {
+            "type": "string",
+            "format": " Time-Span "
+          },
+          "timespan": {
+            "type": "string",
+            "format": "TIMESPAN"
+          },
+          "uuid": {
+            "type": "string",
+            "format": " UUID "
+          },
+          "wideInteger": {
+            "type": "integer",
+            "format": " INT64 "
+          },
+          "customUpper": {
+            "type": "string",
+            "format": "Acme-Token"
+          },
+          "customLower": {
+            "type": "string",
+            "format": "acme-token"
+          },
+          "nullableDuration": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "Duration"
+          },
+          "durationArray": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "duration"
+            }
+          },
+          "nullableTimeValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "TIME"
+            }
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "duration"
+              },
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "sameKnown": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "string",
+                "format": " TIME "
+              }
+            ]
+          },
+          "customChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "Acme-Token"
+              },
+              {
+                "type": "string",
+                "format": "acme-token"
+              }
+            ]
+          },
+          "numericStringCoercion": {
+            "type": [
+              "integer",
+              "string",
+              "null"
+            ],
+            "format": " INT64 "
+          },
+          "typedUnion": {
+            "type": [
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "format": "AcmeScalar"
+          }
+        }
+      }
+    }
+  }
+}

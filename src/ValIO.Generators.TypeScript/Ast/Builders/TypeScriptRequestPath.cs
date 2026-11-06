@@ -14,8 +14,11 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// This is the single implementation of the path-templating that was previously copy-pasted across every
 /// transport client builder (fetch/nextjs/ky/got/ofetch/undici/angular/axios). The output is a plain string
 /// literal when the path has no parameters, or a template literal such as <c>`/api/apartments/${params.route.id}`</c>
-/// otherwise. Placeholder matching is case-insensitive because a spec may write the placeholder
-/// (<c>{dictionaryId}</c>) with different casing than the sanitized parameter name (<c>DictionaryId</c>).
+/// otherwise. Placeholder matching uses <see cref="IrParameter.OriginalName"/> because sanitizing characters such
+/// as dots or hyphens changes the TypeScript member name, while the path template remains an OpenAPI wire value.
+/// Matching prefers exact OpenAPI parameter identity and replaces repeated occurrences. A unique case-insensitive
+/// match supports documents whose path token casing differs from the parameter declaration; ambiguous matches
+/// remain literal so distinct wire names cannot be silently conflated.
 /// </remarks>
 /// <seealso cref="TypeScriptParameterModel"/>
 public static class TypeScriptRequestPath
@@ -38,25 +41,7 @@ public static class TypeScriptRequestPath
         if (operation.PathParameters.Count == 0 || !model.HasRoute)
             return new LiteralExpressionNode(operation.Path, LiteralKind.String);
 
-        var parts = new List<TemplateLiteralPart>();
-        var cursor = 0;
-        foreach (var parameter in operation.PathParameters)
-        {
-            var token = $"{{{parameter.Name}}}";
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                continue;
-            if (index > cursor)
-                parts.Add(new TemplateLiteralPart(operation.Path[cursor..index]));
-            parts.Add(new TemplateLiteralPart(model.RouteAccess(parameter.Name)));
-            cursor = index + token.Length;
-        }
-        if (cursor < operation.Path.Length)
-            parts.Add(new TemplateLiteralPart(operation.Path[cursor..]));
-
-        return parts.Count == 0
-            ? new LiteralExpressionNode(operation.Path, LiteralKind.String)
-            : new TemplateLiteralExpressionNode(parts);
+        return BuildTemplate(operation, parameter => model.RouteAccess(parameter.Name));
     }
 
     /// <summary>
@@ -83,25 +68,65 @@ public static class TypeScriptRequestPath
         if (operation.PathParameters.Count == 0 || routeSource == null)
             return new LiteralExpressionNode(operation.Path, LiteralKind.String);
 
-        var parts = new List<TemplateLiteralPart>();
-        var cursor = 0;
-        foreach (var parameter in operation.PathParameters)
-        {
-            var token = $"{{{parameter.Name}}}";
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                continue;
-            if (index > cursor)
-                parts.Add(new TemplateLiteralPart(operation.Path[cursor..index]));
-            parts.Add(new TemplateLiteralPart(BuildParameterAccess(routeSource, parameter.Name, mayBeUndefined: false)));
-            cursor = index + token.Length;
-        }
-        if (cursor < operation.Path.Length)
-            parts.Add(new TemplateLiteralPart(operation.Path[cursor..]));
+        return BuildTemplate(operation, parameter => BuildParameterAccess(routeSource, parameter.Name, mayBeUndefined: false));
+    }
 
-        return parts.Count == 0
-            ? new LiteralExpressionNode(operation.Path, LiteralKind.String)
-            : new TemplateLiteralExpressionNode(parts);
+    /// <summary>Substitutes path tokens in template order through a shared value-access strategy.</summary>
+    /// <param name="operation">The operation with original wire parameter names.</param>
+    /// <param name="access">Creates the expression for each matching token.</param>
+    /// <returns>A path literal or template that preserves unmatched text and repeated tokens.</returns>
+    private static ExpressionNode BuildTemplate(IrOperation operation, Func<IrParameter, ExpressionNode> access)
+    {
+        var parts = new List<TemplateLiteralPart>();
+        var literalStart = 0;
+        var cursor = 0;
+        while (cursor < operation.Path.Length)
+        {
+            var open = operation.Path.IndexOf('{', cursor);
+            if (open < 0)
+                break;
+            var close = operation.Path.IndexOf('}', open + 1);
+            if (close < 0)
+                break;
+            cursor = close + 1;
+            var name = operation.Path[(open + 1)..close];
+            var parameter = ResolveParameter(operation.PathParameters, name);
+            if (parameter == null)
+                continue;
+            if (open > literalStart)
+                parts.Add(new TemplateLiteralPart(operation.Path[literalStart..open]));
+            parts.Add(new TemplateLiteralPart(access(parameter)));
+            literalStart = cursor;
+        }
+
+        if (parts.Count == 0)
+            return new LiteralExpressionNode(operation.Path, LiteralKind.String);
+        if (literalStart < operation.Path.Length)
+            parts.Add(new TemplateLiteralPart(operation.Path[literalStart..]));
+        return new TemplateLiteralExpressionNode(parts);
+    }
+
+    /// <summary>Resolves a wire token exactly before accepting an unambiguous casing-compatible declaration.</summary>
+    /// <param name="parameters">The operation's path parameter declarations.</param>
+    /// <param name="wireName">The original path token without braces.</param>
+    /// <returns>The matching declaration, or null when no unique declaration exists.</returns>
+    private static IrParameter? ResolveParameter(IReadOnlyList<IrParameter> parameters, string wireName)
+    {
+        var exact = parameters.FirstOrDefault(parameter => string.Equals(parameter.OriginalName, wireName, StringComparison.Ordinal));
+        if (exact != null)
+            return exact;
+
+        IrParameter? compatible = null;
+        foreach (var parameter in parameters)
+        {
+            if (!string.Equals(parameter.OriginalName, wireName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (compatible != null)
+                return null;
+            compatible = parameter;
+        }
+
+        return compatible;
     }
 
     /// <summary>

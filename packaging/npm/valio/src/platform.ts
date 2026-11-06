@@ -4,10 +4,8 @@
 // optional dependency per supported platform, each carrying a single prebuilt
 // executable, and npm installs only the one matching the host's os/cpu.
 //
-// The scope of those packages is tied to the repository owner, because GitHub
-// Packages — which hosts the preview channels — refuses any package scoped
-// differently. Rather than hardcode it in two places and have a rename silently
-// break resolution, the package name is discovered at runtime from the
+// Stable packages use @val.io; preview packages on GitHub Packages use the
+// repository owner's scope. The package name is discovered at runtime from the
 // wrapper's own `optionalDependencies`. That manifest is stamped at publish time
 // (see .github/scripts/prepare-npm.mjs) and is the single source of truth for
 // which packages this build expects.
@@ -25,7 +23,7 @@ const require = createRequire(import.meta.url);
 export interface PlatformInfo {
   /** Platform key in `<os>-<arch>` form, e.g. `"linux-x64"`. */
   key: string;
-  /** Fully qualified npm package name, e.g. `"@valio/cli-linux-x64"`. */
+  /** Fully qualified npm package name, e.g. `"@val.io/cli-linux-x64"`. */
   pkg: string;
   /** File name of the executable inside the package. */
   exe: string;
@@ -50,7 +48,7 @@ const SUPPORTED = new Set([
  * message, so a damaged install still names a plausible package instead of
  * something obviously wrong.
  */
-const FALLBACK_SCOPE = "@valio-projects";
+const FALLBACK_SCOPE = "@val.io";
 
 /**
  * Reads the wrapper's own package.json.

@@ -55,6 +55,15 @@ jobs:
     name: ci
     uses: ./.github/workflows/ci.yml
 
+  web:
+    name: web
+    needs: [ci]
+    uses: ./.github/workflows/web.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+
   # ---------------------------------------------------------------------------
   # Resolve the version, channel and target registries for this ref.
   # ---------------------------------------------------------------------------
@@ -115,6 +124,11 @@ jobs:
           -c Release
           -o nupkgs
           -p:Version=${{ needs.version.outputs.version }}
+
+      - name: Install and smoke test the NuGet tool
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: bash .github/scripts/smoke-nuget.sh nupkgs "$VERSION"
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -224,7 +238,7 @@ jobs:
       # Lifted to the job so the step below can branch on whether Trusted
       # Publishing is configured — the `secrets` context is not available in a
       # step-level `if`, but `env` is.
-      NUGET_USER: ${{ secrets.NUGET_USER }}
+      NUGET_USER: ${{ vars.NUGET_USER || secrets.NUGET_USER }}
 
     steps:
       - name: Setup .NET
@@ -240,8 +254,8 @@ jobs:
 
       # Trusted Publishing: exchange the workflow's OIDC token for an API key
       # that expires in an hour, so no long-lived nuget.org key has to exist as
-      # a repository secret. Runs immediately before the push because the key is
-      # short-lived and single-use.
+      # a repository secret. The OIDC token is exchanged once; the resulting
+      # temporary API key can publish this batch during its one-hour lifetime.
       #
       # Requires a policy at https://www.nuget.org/account/trustedpublishing
       # matching this repository, `release.yml`, and the `production`
@@ -254,7 +268,7 @@ jobs:
         uses: NuGet/login@v1
         with:
           # nuget.org profile name, not an email address.
-          user: ${{ secrets.NUGET_USER }}
+          user: ${{ env.NUGET_USER }}
 
       - name: Push
         env:
@@ -288,6 +302,9 @@ jobs:
           else
             API_KEY="${PACKAGES_TOKEN}"
             extra+=(--no-symbols)
+            dotnet nuget add source "$SOURCE" --name valio-github \
+              --username "$GITHUB_ACTOR" --password "$PACKAGES_TOKEN" \
+              --store-password-in-clear-text
           fi
 
           shopt -s nullglob
@@ -333,6 +350,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     environment:
       name: ${{ needs.version.outputs.is-stable == 'true' && 'production' || 'preview' }}
 
@@ -340,27 +358,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Fail before anything is uploaded rather than halfway through the five
-      # platform packages, which would leave the channel in a partial state.
-      - name: Validate credentials
-        env:
-          REGISTRY: ${{ needs.version.outputs.registry }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ "${REGISTRY}" = "public" ] && [ -z "${NPM_TOKEN}" ]; then
-            echo "::error::Secret NPM_TOKEN is not set, so the stable release cannot be pushed to npmjs.com."
-            exit 1
-          fi
-
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          # npm 11.5.1+ is required for OIDC. Publishing stays on GitHub-hosted
+          # runners because npm does not support self-hosted trusted publishers.
+          node-version: '24'
           registry-url: ${{ needs.version.outputs.npm-registry }}
           scope: ${{ needs.version.outputs.npm-scope }}
-          cache: npm
-          cache-dependency-path: packaging/npm/valio/package-lock.json
+          package-manager-cache: false
+
+      - name: Ensure OIDC-compatible npm
+        run: npm install --global npm@11
 
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -384,7 +393,7 @@ jobs:
           done
 
       - name: Build wrapper
-        working-directory: packaging/npm/valio
+        working-directory: packaging/npm
         run: |
           npm ci --ignore-scripts
           npm run build
@@ -397,9 +406,14 @@ jobs:
           --main-name '${{ needs.version.outputs.npm-main-name }}'
           --registry '${{ needs.version.outputs.npm-registry }}'
 
+      - name: Install npm tarballs and invoke the native CLI
+        run: node .github/scripts/smoke-npm.mjs packaging/npm/platforms/linux-x64/valio
+
       - name: Publish platform packages
         env:
-          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'public' && secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+          # Public packages use OIDC; NPM_TOKEN only bootstraps packages that
+          # do not exist yet. Never send the GitHub token to npmjs.com.
+          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'github' && secrets.GITHUB_TOKEN || secrets.NPM_TOKEN }}
           DIST_TAG: ${{ needs.version.outputs.npm-tag }}
           VERSION: ${{ needs.version.outputs.version }}
           REGISTRY: ${{ needs.version.outputs.registry }}
@@ -427,7 +441,7 @@ jobs:
       - name: Publish wrapper package
         working-directory: packaging/npm/valio
         env:
-          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'public' && secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'github' && secrets.GITHUB_TOKEN || secrets.NPM_TOKEN }}
           DIST_TAG: ${{ needs.version.outputs.npm-tag }}
           VERSION: ${{ needs.version.outputs.version }}
           NAME: ${{ needs.version.outputs.npm-main-name }}
@@ -459,8 +473,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Stable releases only: tag the commit and open a GitHub Release carrying the
-  # packages and the platform binaries. Skipped when the tag already exists, so
-  # repeated pushes to main without a VERSION bump are no-ops.
+  # packages and the platform binaries. A published release is immutable here;
+  # interrupted tag creation or draft asset uploads are recovered on a retry.
   # ---------------------------------------------------------------------------
   github-release:
     name: github release
@@ -477,15 +491,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check whether the tag already exists
+      - name: Check whether the GitHub Release already exists
         id: tag
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+          draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+          if [ "$draft" = "false" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag ${TAG} already exists — the release step will be skipped."
+            echo "Release ${TAG} already exists — the release step will be skipped."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -536,13 +552,29 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG}" -m "ValIO ${TAG}"
-          git push origin "${TAG}"
+          # A previous attempt may have pushed the immutable tag and failed
+          # before creating the release. Reuse that tag to recover the run.
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            if [ "$(git rev-parse "${TAG}^{commit}")" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag ${TAG} belongs to another commit. Bump VERSION before publishing changed code."
+              exit 1
+            fi
+          else
+            git tag -a "${TAG}" -m "ValIO ${TAG}"
+            git push origin "${TAG}"
+          fi
 
-          gh release create "${TAG}" \
-            --title "ValIO ${TAG}" \
-            --generate-notes \
-            release-assets/*
+          # Keep the release in draft until every asset is uploaded. A retry
+          # resumes the draft and replaces any partially uploaded assets.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --verify-tag --draft \
+              --title "ValIO ${TAG}" \
+              --generate-notes
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          gh release edit "$TAG" --draft=false --latest
 
       - name: Summary
         if: steps.tag.outputs.exists == 'false'

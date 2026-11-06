@@ -12,10 +12,9 @@ import type { ZodSchema } from 'zod';
 import type { User } from "./user";
 import { UserRoleSchema } from '../userRole/userRole.schema';
 
-export const UserSchema: ZodSchema<User> = z.object({
-    id: z.coerce.number().int(),    
-    name: z.string(),    
-    email: z.string(),    
-    role: UserRoleSchema.nullish()    
-
+export const UserSchema: ZodSchema<User, z.ZodTypeDef, unknown> = z.object({
+    id: z.number().int(),
+    name: z.string(),
+    email: z.string(),
+    role: UserRoleSchema.optional()
 });

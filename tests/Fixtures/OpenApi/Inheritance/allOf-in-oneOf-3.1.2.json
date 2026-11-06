@@ -1,0 +1,94 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Composition regression",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "First": {
+        "type": "object",
+        "required": [
+          "firstValue"
+        ],
+        "properties": {
+          "firstValue": {
+            "type": "string"
+          }
+        }
+      },
+      "Second": {
+        "type": "object",
+        "required": [
+          "secondValue"
+        ],
+        "properties": {
+          "secondValue": {
+            "type": "integer"
+          }
+        }
+      },
+      "Base": {
+        "type": "object",
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/First"
+                      },
+                      {
+                        "$ref": "#/components/schemas/Second"
+                      }
+                    ]
+                  },
+                  {
+                    "$ref": "#/components/schemas/Third"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Child": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Base"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "Third": {
+        "type": "object",
+        "required": [
+          "thirdValue"
+        ],
+        "properties": {
+          "thirdValue": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

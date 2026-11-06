@@ -45,7 +45,7 @@ Every generated file is **fully JSDoc-annotated**: a file header
 `resultTypeSuffix` sets the suffix on the per-operation result-union type
 (`{Operation}Results` by default). Use `Result` / `Response` / `Responses` or a
 custom string when the default name clashes with a generated model. See the
-[options reference](../../configuration/options-reference/) for details.
+[options reference](/configuration/options-reference/) for details.
 
 ## File layout
 

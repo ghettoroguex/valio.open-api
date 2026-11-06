@@ -82,5 +82,7 @@ public class CSharpModelsStepTests
         dogFile.Content.Should().Contain("class Dog : Animal");
         dogFile.Content.Should().NotContain("public string Name"); // унаследовано, не переобъявляется
         dogFile.Content.Should().Contain("public string Breed"); // собственное свойство остаётся
+        dogFile.Content.Should().EndWith(Environment.NewLine);
+        dogFile.Content.Should().NotEndWith(Environment.NewLine + Environment.NewLine);
     }
 }

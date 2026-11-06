@@ -54,7 +54,7 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     /// <inheritdoc/>
     public TypeNode? SchemaTypeAnnotation(string validatedTypeName) =>
-        new RawTypeNode($"ZodSchema<{validatedTypeName}>");
+        ZodSchemaTypes.Build(new SimpleTypeNode(new IdentifierNode(validatedTypeName)), _importPath);
 
     private ImportNode ZodImport() =>
         new(ImmutableList.Create(new IdentifierNode("z")), _importPath, ImportKind.Named);

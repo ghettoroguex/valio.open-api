@@ -1,4 +1,5 @@
 using ValIO.Core.IR.Constraints;
+using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 
 namespace ValIO.Core.IR;
@@ -78,24 +79,23 @@ public sealed record IrOperation
 }
 
 /// <summary>
-/// IR представление параметра операции
+/// Represents an operation parameter, preserving source identity, validation, and HTTP serialization metadata.
 /// </summary>
 public sealed record IrParameter
 {
     /// <summary>
-    /// Имя параметра (sanitized)
+    /// Gets the sanitized identifier used by generated source declarations.
     /// </summary>
+    /// <value>The language-neutral parameter identifier.</value>
     public required string Name { get; init; }
 
+    /// <summary>Stores the original wire name when identifier sanitization changes it.</summary>
     private readonly string? _originalName;
 
     /// <summary>
-    /// Исходное (до sanitize) имя параметра из OpenAPI — «проводное» имя, которое должно попадать в
-    /// URL query-string / header без изменений (напр. вложенная модель <c>Paging.Offset</c>, которую
-    /// ASP.NET биндит по точечному имени). <see cref="Name"/> может быть sanitized-идентификатором
-    /// (<c>Paging_Offset</c>) ради валидного имени параметра метода, но ключ в запросе обязан
-    /// оставаться исходным. По умолчанию равно <see cref="Name"/>, если sanitize ничего не менял.
+    /// Gets the original HTTP query, path, or header name before source identifier sanitization.
     /// </summary>
+    /// <value>The original wire name, falling back to <see cref="Name"/> for manually constructed IR.</value>
     public string OriginalName
     {
         get => _originalName ?? Name;
@@ -103,24 +103,27 @@ public sealed record IrParameter
     }
 
     /// <summary>
-    /// Тип параметра
+    /// Gets the language-independent type of the parameter value.
     /// </summary>
+    /// <value>The parameter type, including its collection and nullability semantics.</value>
     public required IrType Type { get; init; }
     
     /// <summary>
-    /// Является ли параметр обязательным
+    /// Gets whether the HTTP operation requires the parameter to be present.
     /// </summary>
+    /// <value>Whether omission violates the source contract.</value>
     public required bool IsRequired { get; init; }
 
     /// <summary>
-    /// Описание
+    /// Gets the parameter description, falling back to its schema description when necessary.
     /// </summary>
+    /// <value>The source documentation, or <see langword="null"/> when none is provided.</value>
     public string? Description { get; init; }
 
     /// <summary>
-    /// Значение по умолчанию из OpenAPI (<c>parameter.schema.default</c>), или <see langword="null"/>.
-    /// Используется для генерации <c>.default(...)</c> в схеме параметра.
+    /// Gets the source schema default used by generated validators or optional parameter handling.
     /// </summary>
+    /// <value>The decoded default value, or <see langword="null"/> when absent.</value>
     public object? DefaultValue { get; init; }
 
     /// <summary>
@@ -129,8 +132,25 @@ public sealed record IrParameter
     /// generated params interface file and referenced by the params schema — mirroring how model-property
     /// constraints (<see cref="IrProperty.Constraints"/>) are handled.
     /// </summary>
+    /// <value>The extracted constraints, or <see langword="null"/> when the parameter has none.</value>
     /// <seealso cref="IrPropertyConstraints"/>
     public IrPropertyConstraints? Constraints { get; init; }
+
+    /// <summary>Gets the normalized HTTP parameter serialization style supplied by the source reader.</summary>
+    /// <remarks>
+    /// The OpenAPI builder always sets this value. For manually constructed legacy IR, generators resolve
+    /// an absent value from the parameter location: form for query parameters and simple for path or header parameters.
+    /// </remarks>
+    /// <value>The serialization style, or <see langword="null"/> when no metadata was supplied.</value>
+    public IrParameterStyle? Style { get; init; }
+
+    /// <summary>Gets whether array elements or object properties expand into separate parameter entries.</summary>
+    /// <remarks>
+    /// The OpenAPI builder preserves the reader's effective value, including source defaults.
+    /// For manually constructed legacy IR, the default is true for form or cookie style and false for other styles.
+    /// </remarks>
+    /// <value>The normalized explode flag, or <see langword="null"/> when no metadata was supplied.</value>
+    public bool? Explode { get; init; }
 }
 
 /// <summary>

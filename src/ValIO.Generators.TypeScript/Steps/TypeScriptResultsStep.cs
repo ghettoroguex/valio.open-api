@@ -37,8 +37,8 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
+        var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 

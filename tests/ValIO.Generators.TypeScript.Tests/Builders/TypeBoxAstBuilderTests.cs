@@ -58,11 +58,16 @@ public class TypeBoxAstBuilderTests
         rendered.Should().Contain("format").And.Contain("date-time");
     }
 
+    /// <summary>Verifies binary values use a registered Blob schema matching their generated runtime type.</summary>
     [Test]
-    public void Binary_HasContentEncodingBase64()
+    public void Binary_UsesRegisteredBlobInstanceSchema()
     {
         var rendered = Render(Prim(IrPrimitiveKind.Binary));
-        rendered.Should().Contain("Type.String(").And.Contain("contentEncoding").And.Contain("base64");
+        rendered.Should().Contain("TypeRegistry.Set(")
+            .And.Contain("\"ValIO.Blob\"")
+            .And.Contain("Blob.prototype.isPrototypeOf(Object(value))")
+            .And.Contain("Type.Unsafe<Blob>(Object.fromEntries([[Kind, \"ValIO.Blob\"]]))");
+        rendered.Should().NotContain("Type.String(").And.NotContain("contentEncoding");
     }
 
     [Test]

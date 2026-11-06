@@ -78,6 +78,11 @@ as values. `zod` is normalised to `zod3` for backwards compatibility.
 | Recursive types      | `z.lazy(() => ...)`                  | `z.lazy()` with improved inference     |
 | `safeParse`          | `{ success, data, error }`           | Same                                   |
 
+Direct and mutually recursive model references use `z.lazy(() => TargetSchema)` in both
+versions. ValIO identifies recursive edges from the finalized model dependency graph,
+including references inside nullable values, records, arrays, and compositions.
+References outside a cycle remain eager; recursive records still validate every nested value.
+
 `z.string().min()`, `.max()`, `.length()`, `.refine()`, `.transform()`, and
 the parse APIs (`parse`, `safeParse`, `parseAsync`) work in both versions.
 

@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -15,15 +16,20 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// которые иначе пришлось бы строить inline в клиенте на каждый вызов (union/array и т.п.).
 /// Каждая constructed-схема объявляется один раз как <c>export const {Op}Result{Status}Schema = ...;</c>.
 /// </summary>
-public sealed class TypeScriptResultsSchemasAstBuilder
+public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    internal TypeScriptResultsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation)
+    /// <summary>Creates a TypeScriptResultsSchemasAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="validation">The configured runtime validation strategy.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    internal TypeScriptResultsSchemasAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, IClientValidationStrategy validation)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
@@ -45,7 +51,6 @@ public sealed class TypeScriptResultsSchemasAstBuilder
         if (!_validation.IsEnabled)
             return null;
 
-        OriginalNameMap.AddOperation(_orig, operation);
 
         var constructed = operation.Responses
             .Where(r => r.Type != null
@@ -94,7 +99,7 @@ public sealed class TypeScriptResultsSchemasAstBuilder
         foreach (var modelName in modelNames.OrderBy(n => n, StringComparer.Ordinal))
         {
             // Имя файла модели — от исходного (до affix) имени; спецификатор импорта affix.
-            var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+            var modelFile = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
                 from: $"../../{modelsPath}/{modelFile}/{modelFile}.schema",

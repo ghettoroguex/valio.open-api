@@ -1,0 +1,38 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "inline-matching-property-names.json",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "First": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "object",
+            "properties": {
+              "first": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Second": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "object",
+            "properties": {
+              "second": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

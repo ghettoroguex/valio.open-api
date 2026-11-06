@@ -1,0 +1,11 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\Directory.Build.targets" />
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\OpenApiFixture.cs" Link="Fixtures\OpenApiFixture.cs" />
+    <None Include="$(MSBuildThisFileDirectory)Fixtures\OpenApi\**\*"
+          Link="Fixtures\OpenApi\%(RecursiveDir)%(Filename)%(Extension)"
+          TargetPath="Fixtures\OpenApi\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

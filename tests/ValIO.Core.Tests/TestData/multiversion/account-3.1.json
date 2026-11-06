@@ -15,8 +15,7 @@
         "type": "object",
         "properties": {
           "envelope": {
-            "allOf": [ { "$ref": "#/components/schemas/Account" } ],
-            "nullable": true
+            "anyOf": [ { "$ref": "#/components/schemas/Account" }, { "type": "null" } ]
           }
         }
       }

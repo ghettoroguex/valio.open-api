@@ -25,7 +25,8 @@ public sealed class ConditionalExpressionNode : ExpressionNode
     public ExpressionNode FalseExpression { get; }
     
     
-    public override IReadOnlyList<AstNode> Children => new[] { Condition, TrueExpression, FalseExpression };
+    /// <inheritdoc/>
+    public override IReadOnlyList<AstNode> Children => [Condition, TrueExpression, FalseExpression, .. base.Children];
     
     /// <summary>
     /// Конструктор

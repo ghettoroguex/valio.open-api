@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -22,30 +23,36 @@ namespace ValIO.Generators.TypeScript.OFetch.Ast.Builders;
 /// to expose status for the discriminated-union result; <c>ignoreResponseError:true</c>
 /// disables the default throw-on-non-2xx behaviour.
 /// </summary>
-public sealed class OFetchClientAstBuilder
+public sealed class OFetchClientAstBuilder : AstBuilderBase
 {
+
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public OFetchClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    /// <summary>Creates a OFetchClientAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public OFetchClientAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = Validation.ClientValidationStrategyFactory.Create(options);
 
-        var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
+        var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
@@ -63,6 +70,13 @@ public sealed class OFetchClientAstBuilder
                 $"ofetch HTTP client for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Imports the native transport types and operation-specific models and validation schemas.</summary>
+    /// <param name="operation">The operation whose imports are generated.</param>
+    /// <param name="operationFileName">The original operation file name.</param>
+    /// <param name="fileOrganization">The configured output layout.</param>
+    /// <param name="hasParameters">Whether a generated parameter type is needed.</param>
+    /// <param name="hasResultType">Whether a generated result union is needed.</param>
+    /// <returns>The imports required by the native client operation.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
@@ -75,6 +89,12 @@ public sealed class OFetchClientAstBuilder
             items: ImmutableList.Create(new IdentifierNode("$fetch")),
             from: "ofetch",
             kind: ImportKind.Named));
+
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode("$Fetch")),
+            from: "ofetch",
+            kind: ImportKind.Named,
+            isTypeOnly: true));
 
         // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
         imports.AddRange(_validation.RuntimeImports(
@@ -149,6 +169,11 @@ public sealed class OFetchClientAstBuilder
             ? new[] { operation.RequestBody.Type }
             : Array.Empty<IrType>();
 
+    /// <summary>Builds a native operation with compatible options, cancellation, and optional configured client injection.</summary>
+    /// <param name="operation">The operation whose callable API is generated.</param>
+    /// <param name="hasParameters">Whether the operation accepts a parameter object.</param>
+    /// <param name="hasResultType">Whether the operation returns a response union.</param>
+    /// <returns>The generated operation declaration.</returns>
     private FunctionDeclarationNode BuildOperationFunction(
         IrOperation operation,
         bool hasParameters,
@@ -172,6 +197,8 @@ public sealed class OFetchClientAstBuilder
             type: Simple("AbortSignal"),
             isRequired: false));
 
+        parameters.Add(TypeScriptHttpClientInjection.Parameter(Simple("$Fetch")));
+
         return new FunctionDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
             returnType: new GenericTypeNode(new IdentifierNode("Promise"), ImmutableList.Create(returnType)),
@@ -182,13 +209,24 @@ public sealed class OFetchClientAstBuilder
             isExported: true);
     }
 
+    /// <summary>Builds validation, serialized request data, and response dispatch for one operation.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasResultType">Whether the operation returns a generated result union.</param>
+    /// <returns>The operation function body.</returns>
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType)
     {
         var statements = new List<StatementNode>();
+        statements.Add(TypeScriptHttpClientInjection.Declaration("$fetch"));
         var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
             AddValidationParsingStatements(operation, sources, statements);
+
+        if (operation.RequestBody is { IsForm: true } requestBody && sources.BodySource != null)
+        {
+            sources.BodySource = TypeScriptFormBody.Build(requestBody, sources.BodySource, ModelsByName, statements);
+            statements.Add(new BlankLineStatementNode());
+        }
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestUrl"),
@@ -197,7 +235,7 @@ public sealed class OFetchClientAstBuilder
         statements.Add(new BlankLineStatementNode());
 
         var rawCall = new CallExpressionNode(
-            Member(Id("$fetch"), "raw"),
+            Member(Id("httpClient"), "raw"),
             ImmutableList.Create<ExpressionNode>(
                 Id("requestUrl"),
                 BuildOFetchOptionsExpression(operation, sources, hasResultType)));
@@ -229,6 +267,10 @@ public sealed class OFetchClientAstBuilder
         return new BlockNode(statements.ToImmutableList());
     }
 
+    /// <summary>Validates present parameter groups while preserving optional request-body absence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <param name="statements">The endpoint statements receiving validation or request construction.</param>
     private void AddValidationParsingStatements(
         IrOperation operation,
         TypeScriptParameterSources sources,
@@ -267,15 +309,24 @@ public sealed class OFetchClientAstBuilder
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedBody"),
                 type: null,
-                initializer: _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
+                initializer: sources.BodySourceMayBeUndefined
+                    ? new ConditionalExpressionNode(
+                        new BinaryExpressionNode(sources.BodySource, BinaryOperator.NotEqual, Id("undefined")),
+                        _validation.Validate(operation.RequestBody.Type, sources.BodySource),
+                        Id("undefined"))
+                    : _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
             sources.BodySource = Id("parsedBody");
-            sources.BodySourceMayBeUndefined = false;
         }
 
         if (statements.Count > 0)
             statements.Add(new BlankLineStatementNode());
     }
 
+    /// <summary>Builds transport options from validated values and original wire names.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <param name="hasResultType">Whether the operation returns a generated result union.</param>
+    /// <returns>The transport request options.</returns>
     private ObjectLiteralExpressionNode BuildOFetchOptionsExpression(
         IrOperation operation,
         TypeScriptParameterSources sources,
@@ -286,24 +337,16 @@ public sealed class OFetchClientAstBuilder
             new(new IdentifierNode("method"), String(operation.HttpMethod.ToUpperInvariant()))
         };
 
-        if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
+        if (sources.HeadersSource != null || operation.RequestBody is { IsFormUrlEncoded: true })
         {
+            var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
+                operation, sources.HeadersSource, sources.HeadersSourceMayBeUndefined);
             var castedHeaders = new CastExpressionNode(
                 Simple("Record<string, string>", isPrimitive: false),
-                new CastExpressionNode(Simple("unknown", isPrimitive: true), sources.HeadersSource, useAsOperator: true),
+                new CastExpressionNode(Simple("unknown", isPrimitive: true), wireHeaders, useAsOperator: true),
                 useAsOperator: true);
 
-            if (sources.HeadersSourceMayBeUndefined)
-            {
-                properties.Add(SpreadProperty(new ConditionalExpressionNode(
-                    sources.HeadersSource,
-                    Object(("headers", castedHeaders)),
-                    EmptyObject())));
-            }
-            else
-            {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), castedHeaders));
-            }
+            properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), castedHeaders));
         }
 
         if (operation.QueryParameters.Count > 0 && sources.QuerySource != null)
@@ -345,35 +388,31 @@ public sealed class OFetchClientAstBuilder
         return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
     }
 
+    /// <summary>Builds a canonical wire-keyed query parameter object.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <returns>The query parameter expression.</returns>
     private ExpressionNode BuildQueryObject(IrOperation operation, TypeScriptParameterSources sources)
     {
-        var properties = new List<PropertyAssignmentNode>();
-        foreach (var parameter in operation.QueryParameters)
-        {
-            var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
-            if (parameter.IsRequired)
-            {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.Name), access));
-            }
-            else
-            {
-                properties.Add(SpreadProperty(new ConditionalExpressionNode(
-                    new BinaryExpressionNode(access, BinaryOperator.NotEqual, Id("undefined")),
-                    Object((parameter.Name, access)),
-                    EmptyObject())));
-            }
-        }
+        var literal = TypeScriptWireParameterObject.BuildFromSource(
+            operation.QueryParameters,
+            sources.QuerySource!,
+            sources.QuerySourceMayBeUndefined,
+            omitUndefinedValues: true);
 
-        return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
+        return literal;
     }
 
+    /// <summary>Adds a result branch for every documented numeric status, including responses without content.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="statements">The function statements receiving the response branches.</param>
     private void AddStatusResultBranches(IrOperation operation, List<StatementNode> statements)
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         var responseStatus = Member(Id("response"), "status");
         var responseData = Id("responseData");
 
-        foreach (var response in operation.Responses.Where(r => r.Type != null && int.TryParse(r.StatusCode, out _)))
+        foreach (var response in operation.Responses.Where(r => int.TryParse(r.StatusCode, out _)))
         {
             var statusCode = int.Parse(response.StatusCode);
             var isSuccessful = statusCode >= 200 && statusCode < 300;
@@ -414,8 +453,15 @@ public sealed class OFetchClientAstBuilder
     /// Тело ответа: голая ссылка на модель → <c>{Model}Schema</c>; constructed-тип (union/array/...) →
     /// вынесенная <c>{Op}Result{Status}Schema</c>; иначе/без валидации — сырые данные.
     /// </summary>
+    /// <summary>Builds undefined for bodyless responses or validates the documented response value.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="response">The documented response variant.</param>
+    /// <param name="responseData">The decoded response data expression.</param>
+    /// <returns>The decoded or validated response body value.</returns>
     private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
+        if (response.Type == null)
+            return Id("undefined");
         if (!_validation.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
             return responseData;
         if (response.Type is IrModelReference modelRef)
@@ -429,7 +475,7 @@ public sealed class OFetchClientAstBuilder
     {
         // Model schemas are co-located with their models under modelsPath.
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         return fileOrganization.SeparateModels
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";

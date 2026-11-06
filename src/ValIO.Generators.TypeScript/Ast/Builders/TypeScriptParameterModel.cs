@@ -91,7 +91,8 @@ public sealed class TypeScriptParameterModel
     /// </summary>
     public bool QueryMayBeUndefined { get; }
 
-    /// <summary>Whether the aggregate <c>params.headers</c> group may be <c>undefined</c> at runtime.</summary>
+    /// <summary>Whether every header is optional and its aggregate group may therefore be absent.</summary>
+    /// <value>Whether header access requires optional chaining.</value>
     public bool HeadersMayBeUndefined { get; }
 
     /// <summary>Whether the body/form group may be <c>undefined</c> at runtime (optional request body).</summary>
@@ -129,8 +130,8 @@ public sealed class TypeScriptParameterModel
             hasForm: hasForm,
             // In aggregate mode the `query` property is optional exactly when every query param is optional.
             queryMayBeUndefined: hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired),
-            // In aggregate mode the `headers` property is always optional.
-            headersMayBeUndefined: hasHeaders && !isFlat,
+            // A required wire header also requires the aggregate header group.
+            headersMayBeUndefined: hasHeaders && !isFlat && operation.HeaderParameters.All(parameter => !parameter.IsRequired),
             bodyMayBeUndefined: (hasBody || hasForm) && requestBody?.IsRequired == false);
     }
 

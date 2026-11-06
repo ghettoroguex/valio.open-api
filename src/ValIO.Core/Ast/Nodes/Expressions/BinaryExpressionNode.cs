@@ -36,7 +36,8 @@ public sealed class BinaryExpressionNode : ExpressionNode
     public bool IsNamedArgument { get; }
     
     
-    public override IReadOnlyList<AstNode> Children => new[] { Left, Right };
+    /// <inheritdoc/>
+    public override IReadOnlyList<AstNode> Children => [Left, Right, .. base.Children];
     
     /// <summary>
     /// Конструктор

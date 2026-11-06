@@ -8,6 +8,7 @@
 
 import ky from "ky";
 import type { Options } from "ky";
+import type { KyInstance } from "ky";
 import type { GetUserByIdParams } from "./getUserById.params";
 import type { GetUserByIdResults } from "./getUserById.results";
 import { GetUserByIdRouteParamsSchema } from "./getUserById.params.schema";
@@ -20,13 +21,16 @@ import { UserSchema } from "../../models/user/user.schema";
  * @param {GetUserByIdParams} params
  * @param {Options} [options]
  * @param {AbortSignal} [signal]
+ * @param {KyInstance} [client] Optional configured native HTTP client, including authentication and interceptors.
  * @returns {Promise<GetUserByIdResults>}
  */
 export async function getUserById(
     params: GetUserByIdParams,
     options?: Options,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    client?: KyInstance
 ): Promise<GetUserByIdResults> {
+    const httpClient = (client ?? ky);
     const parsedRoute = GetUserByIdRouteParamsSchema.parse(params);
     
     const requestUrl = `/users/${parsedRoute.id}`;
@@ -39,11 +43,11 @@ export async function getUserById(
     } : {})
     };
     
-    const response = await ky.get(
+    const response = await httpClient.get(
         requestUrl,
         kyOptions
     );
-    const responseData = ((response.status === 204) ? undefined : await response.json<unknown>());
+    const responseData = (((response.status === 204) || (response.status === 205)) ? undefined : await response.json<unknown>());
     
         if ((response.status === 200)) {
         return ({

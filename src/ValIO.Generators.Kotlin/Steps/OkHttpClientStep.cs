@@ -11,13 +11,27 @@ namespace ValIO.Generators.Kotlin.Steps;
 /// </summary>
 public sealed class OkHttpClientStep : ICodeGenerationStep
 {
+    /// <summary>Converts source identifiers into Kotlin class and file names.</summary>
     private readonly INamingConverter _namingConverter;
+
+    /// <summary>Renders client ASTs into Kotlin source text.</summary>
     private readonly IKotlinAstRenderer _renderer;
+
+    /// <summary>Maps shared IR request and response types into Kotlin types.</summary>
     private readonly KotlinIrTypeMapper _typeMapper;
 
+    /// <summary>Gets the identifier selecting this OkHttp generation step.</summary>
+    /// <value>The Kotlin OkHttp step identifier.</value>
     public string Name => "kotlin-okhttp-client";
+
+    /// <summary>Gets the pipeline order placing clients after their model declarations.</summary>
+    /// <value>The client generation order.</value>
     public int Order => 40;
 
+    /// <summary>Initializes client generation with the configured Kotlin services.</summary>
+    /// <param name="namingConverter">The converter for generated identifiers and file names.</param>
+    /// <param name="renderer">The renderer for Kotlin client ASTs.</param>
+    /// <param name="typeMapper">The shared IR to Kotlin type mapper.</param>
     public OkHttpClientStep(
         INamingConverter namingConverter,
         IKotlinAstRenderer renderer,
@@ -28,19 +42,23 @@ public sealed class OkHttpClientStep : ICodeGenerationStep
         _typeMapper = typeMapper;
     }
 
+    /// <summary>Determines whether clients are enabled and present in the source document.</summary>
+    /// <param name="context">The generation configuration and finalized source document.</param>
+    /// <returns>Whether this step should generate client files.</returns>
     public bool ShouldExecute(GenerationContext context)
         => context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0;
 
+    /// <summary>Generates clients using the request's shared model and enum name index.</summary>
+    /// <param name="context">The request containing language options, shared indexes, and output files.</param>
+    /// <param name="ct">The cancellation token supplied by the generation pipeline.</param>
+    /// <returns>A completed task after the client source files have been added.</returns>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as KotlinGenerationOptions ?? new KotlinGenerationOptions();
         var apiPackage = KotlinStepHelper.ApiPackage(opts);
         var apiDir = KotlinStepHelper.PackageToPath(apiPackage);
         var modelsPackage = KotlinStepHelper.ModelsPackage(opts);
-        var knownNames = new HashSet<string>(
-            context.IrDocument.Models.Select(m => m.Name)
-                .Concat(context.IrDocument.Enums.Select(e => e.Name)),
-            StringComparer.Ordinal);
+        var knownNames = context.DocumentContext.KnownTypeNames;
 
         var builder = new OkHttpClientAstBuilder(_namingConverter, _typeMapper);
         foreach (var client in context.IrDocument.Clients)
@@ -55,6 +73,9 @@ public sealed class OkHttpClientStep : ICodeGenerationStep
         return Task.CompletedTask;
     }
 
+    /// <summary>Converts a client identifier into a Kotlin API class name without duplicating its suffix.</summary>
+    /// <param name="clientName">The source client identifier.</param>
+    /// <returns>The PascalCase class name ending in <c>Api</c>.</returns>
     private string ToClassName(string clientName)
     {
         var pascal = _namingConverter.ToPascalCase(clientName);

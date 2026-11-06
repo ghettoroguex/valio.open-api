@@ -29,6 +29,8 @@ public class OFetchClientStepTests
             f.RelativePath.EndsWith(".ofetch.ts", StringComparison.Ordinal));
     }
 
+    /// <summary>Verifies OFetchClient_EmitsRawCallAndIgnoreError with native transport injection enabled.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task OFetchClient_EmitsRawCallAndIgnoreError()
     {
@@ -38,7 +40,7 @@ public class OFetchClientStepTests
         var of = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.ofetch.ts", StringComparison.Ordinal));
         of.Content.Should().Contain("import { $fetch } from \"ofetch\"");
-        of.Content.Should().Contain("$fetch.raw");
+        of.Content.Should().Contain("httpClient.raw");
         of.Content.Should().Contain("ignoreResponseError");
         of.Content.Should().Contain("response.status");
     }
