@@ -11,14 +11,17 @@ import type { UserRole } from "../userRole/userRole";
 export interface User {
     /**
      * @type {number}
+     * @required
      */
     id: number;
     /**
      * @type {string}
+     * @required
      */
     name: string;
     /**
      * @type {string}
+     * @required
      */
     email: string;
     /**

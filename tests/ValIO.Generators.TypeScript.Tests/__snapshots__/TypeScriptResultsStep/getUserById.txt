@@ -12,18 +12,22 @@ import type { User } from "../../models/user/user";
 export interface GetUserByIdResult200 {
     /**
      * HTTP 200
+     * @required
      */
     status: 200;
     /**
      * A user
+     * @required
      */
     body: User;
     /**
      * True — response is 2xx
+     * @required
      */
     isSuccessful: true;
     /**
      * False — response is 2xx
+     * @required
      */
     isFailed: false;
 }
@@ -32,18 +36,22 @@ export interface GetUserByIdResult200 {
 export interface GetUserByIdResultOther {
     /**
      * HTTP status code not in schema (e.g. 204, 301, 503)
+     * @required
      */
     status: number;
     /**
      * Response body for unhandled status
+     * @required
      */
     body: unknown;
     /**
      * Always false — undocumented status codes are treated as non-success
+     * @required
      */
     isSuccessful: false;
     /**
      * Always true — undocumented status codes are treated as failures
+     * @required
      */
     isFailed: true;
 }

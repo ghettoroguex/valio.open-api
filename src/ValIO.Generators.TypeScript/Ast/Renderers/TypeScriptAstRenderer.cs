@@ -639,12 +639,14 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     /// <param name="indentLevel">The member indentation level.</param>
     private void RenderPropertySignature(StringBuilder sb, PropertySignatureNode node, int indentLevel)
     {
+        CodeFormatter.AppendLine(sb, indentLevel, "/**");
         if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
         {
-            CodeFormatter.AppendLine(sb, indentLevel, "/**");
-            CodeFormatter.AppendLine(sb, indentLevel, $" * {node.Documentation.Text}");
-            CodeFormatter.AppendLine(sb, indentLevel, " */");
+            foreach (var line in node.Documentation.Text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
+                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
         }
+        CodeFormatter.AppendLine(sb, indentLevel, node.IsRequired ? " * @required" : " * @optional");
+        CodeFormatter.AppendLine(sb, indentLevel, " */");
         // Property presence follows the IR required flag; nullable values do not imply an optional key.
         var optional = !node.IsRequired ? "?" : "";
         var type = RenderType(node.Type);
@@ -786,6 +788,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
+    /// <summary>Renders a function declaration and its JSDoc annotations.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The function declaration.</param>
+    /// <param name="indentLevel">The declaration indentation level.</param>
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
         // Формируем расширенный JSDoc комментарий
@@ -856,7 +862,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, "/**");
             foreach (var line in jsDocLines)
             {
-                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+                foreach (var part in line.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
+                    CodeFormatter.AppendLine(sb, indentLevel, $" * {part}");
             }
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
@@ -1039,6 +1046,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Добавляем @type для явного указания типа
         var typeString = RenderType(node.Type);
         jsDocLines.Add($"@type {{{typeString}}}");
+
+        // Required presence is independent from whether the value permits null or undefined.
+        if (node.IsRequired)
+            jsDocLines.Add("@required");
         
         // Nullish: один тег вместо раздельных @optional / @nullable
         if (isNullishUnion)
@@ -1122,7 +1133,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, "/**");
             foreach (var line in jsDocLines)
             {
-                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+                foreach (var part in line.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
+                    CodeFormatter.AppendLine(sb, indentLevel, $" * {part}");
             }
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
